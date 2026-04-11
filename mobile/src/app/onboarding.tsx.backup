@@ -1,0 +1,2157 @@
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { View, Text, Pressable, Dimensions, TextInput, ScrollView, Image, ActivityIndicator, Alert } from 'react-native';
+import { useRouter } from 'expo-router';
+import { Video, ResizeMode } from 'expo-av';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Search, Calendar, MapPin, User as UserIcon, Users, Edit3, Globe, Languages, Zap, Backpack, Clock, UsersRound, Map, Award, Camera as CameraIcon, Check, ArrowUp, ArrowLeft, ArrowRight, X, Heart, ImageIcon, Lock } from 'lucide-react-native';
+import { signInWithGoogle, ensureUserProfile, isAuthenticated } from '@/lib/supabase';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import * as ImagePicker from 'expo-image-picker';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+  Easing,
+  withSpring,
+  interpolate,
+  runOnJS,
+  withDelay,
+  withSequence,
+  FadeIn,
+  FadeInDown,
+  FadeInUp,
+  FadeInLeft,
+  FadeInRight,
+  FadeOut,
+  SlideInRight,
+  SlideOutLeft,
+  ZoomIn,
+  BounceIn,
+  BounceInDown,
+  FlipInYRight,
+  RotateInDownLeft,
+  LightSpeedInRight,
+} from 'react-native-reanimated';
+import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import { usePremiumSounds } from '@/lib/usePremiumSounds';
+
+const { width, height } = Dimensions.get('window');
+
+type OnboardingData = {
+  name: string;
+  birthday: Date | null;
+  country: string;
+  city: string;
+  gender: 'male' | 'female' | 'other' | null;
+  travelWith: 'male' | 'female' | 'everyone' | null;
+  bio: string;
+  placesVisited: string[];
+  languages: string[];
+  socialEnergy: 'introvert' | 'extrovert' | 'ambivert' | null;
+  travelStyles: string[];
+  travelPace: 'slow' | 'balanced' | 'fast' | null;
+  groupType: 'close-knit' | 'open' | null;
+  planningStyle: 'planner' | 'spontaneous' | 'flexible' | null;
+  experience: 'beginner' | 'intermediate' | 'experienced' | 'expert' | null;
+  verified: boolean;
+  bucketList: string[];
+};
+
+// Countries with flags and representative images
+const VISIT_COUNTRIES = [
+  { name: 'United States', flag: '🇺🇸', image: 'https://images.unsplash.com/photo-1485738422979-f5c462d49f74?w=400' },
+  { name: 'France', flag: '🇫🇷', image: 'https://images.unsplash.com/photo-1502602898657-3e91760cbb34?w=400' },
+  { name: 'Japan', flag: '🇯🇵', image: 'https://images.unsplash.com/photo-1480796927426-f609979314bd?w=400' },
+  { name: 'Italy', flag: '🇮🇹', image: 'https://images.unsplash.com/photo-1515542622106-78bda8ba0e5b?w=400' },
+  { name: 'Spain', flag: '🇪🇸', image: 'https://images.unsplash.com/photo-1543783207-ec64e4d95325?w=400' },
+  { name: 'United Kingdom', flag: '🇬🇧', image: 'https://images.unsplash.com/photo-1513635269975-59663e0ac1ad?w=400' },
+  { name: 'Germany', flag: '🇩🇪', image: 'https://images.unsplash.com/photo-1467269204594-9661b134dd2b?w=400' },
+  { name: 'Australia', flag: '🇦🇺', image: 'https://images.unsplash.com/photo-1523482580672-f109ba8cb9be?w=400' },
+  { name: 'Canada', flag: '🇨🇦', image: 'https://images.unsplash.com/photo-1517935706615-2717063c2225?w=400' },
+  { name: 'Brazil', flag: '🇧🇷', image: 'https://images.unsplash.com/photo-1483729558449-99ef09a8c325?w=400' },
+  { name: 'Thailand', flag: '🇹🇭', image: 'https://images.unsplash.com/photo-1519451241324-20b4ea2c4220?w=400' },
+  { name: 'Greece', flag: '🇬🇷', image: 'https://images.unsplash.com/photo-1533105079780-92b9be482077?w=400' },
+  { name: 'Mexico', flag: '🇲🇽', image: 'https://images.unsplash.com/photo-1518638150340-f706e86654de?w=400' },
+  { name: 'Netherlands', flag: '🇳🇱', image: 'https://images.unsplash.com/photo-1534351590666-13e3e96b5017?w=400' },
+  { name: 'Switzerland', flag: '🇨🇭', image: 'https://images.unsplash.com/photo-1527668752968-14dc70a27c95?w=400' },
+  { name: 'Portugal', flag: '🇵🇹', image: 'https://images.unsplash.com/photo-1555881400-74d7acaacd8b?w=400' },
+];
+
+const HOME_COUNTRIES = [
+  { name: 'United States', flag: '🇺🇸', cities: ['New York', 'Los Angeles', 'Chicago', 'Houston', 'Phoenix', 'Philadelphia', 'San Antonio', 'San Diego', 'Dallas', 'San Jose', 'Austin', 'Jacksonville', 'Fort Worth', 'Columbus', 'Charlotte', 'San Francisco', 'Indianapolis', 'Seattle', 'Denver', 'Washington DC', 'Boston', 'Nashville', 'Detroit', 'Portland', 'Las Vegas', 'Miami', 'Atlanta', 'Orlando', 'Minneapolis', 'New Orleans'] },
+  { name: 'Canada', flag: '🇨🇦', cities: ['Toronto', 'Vancouver', 'Montreal', 'Calgary', 'Ottawa', 'Edmonton', 'Winnipeg', 'Quebec City', 'Hamilton', 'Victoria', 'Halifax', 'Saskatoon', 'Regina', 'St. Johns', 'Kelowna', 'Barrie', 'Windsor', 'Kitchener', 'London', 'Oshawa'] },
+  { name: 'United Kingdom', flag: '🇬🇧', cities: ['London', 'Manchester', 'Edinburgh', 'Birmingham', 'Liverpool', 'Bristol', 'Glasgow', 'Leeds', 'Sheffield', 'Newcastle', 'Nottingham', 'Southampton', 'Cardiff', 'Belfast', 'Leicester', 'Brighton', 'Oxford', 'Cambridge', 'York', 'Bath'] },
+  { name: 'France', flag: '🇫🇷', cities: ['Paris', 'Marseille', 'Lyon', 'Nice', 'Bordeaux', 'Toulouse', 'Nantes', 'Strasbourg', 'Montpellier', 'Lille', 'Rennes', 'Reims', 'Saint-Étienne', 'Toulon', 'Le Havre', 'Grenoble', 'Dijon', 'Angers', 'Nîmes', 'Cannes'] },
+  { name: 'Germany', flag: '🇩🇪', cities: ['Berlin', 'Munich', 'Hamburg', 'Frankfurt', 'Cologne', 'Stuttgart', 'Düsseldorf', 'Leipzig', 'Dortmund', 'Essen', 'Bremen', 'Dresden', 'Hanover', 'Nuremberg', 'Duisburg', 'Bochum', 'Wuppertal', 'Bielefeld', 'Bonn', 'Münster'] },
+  { name: 'Spain', flag: '🇪🇸', cities: ['Madrid', 'Barcelona', 'Valencia', 'Seville', 'Bilbao', 'Zaragoza', 'Málaga', 'Murcia', 'Palma', 'Las Palmas', 'Alicante', 'Córdoba', 'Valladolid', 'Vigo', 'Gijón', 'Granada', 'Elche', 'Oviedo', 'Santander', 'San Sebastián'] },
+  { name: 'Italy', flag: '🇮🇹', cities: ['Rome', 'Milan', 'Florence', 'Venice', 'Naples', 'Turin', 'Bologna', 'Genoa', 'Palermo', 'Bari', 'Catania', 'Verona', 'Padua', 'Trieste', 'Brescia', 'Parma', 'Modena', 'Pisa', 'Siena', 'Amalfi'] },
+  { name: 'Japan', flag: '🇯🇵', cities: ['Tokyo', 'Osaka', 'Kyoto', 'Yokohama', 'Nagoya', 'Sapporo', 'Fukuoka', 'Kobe', 'Kawasaki', 'Sendai', 'Hiroshima', 'Kitakyushu', 'Chiba', 'Sakai', 'Niigata', 'Hamamatsu', 'Shizuoka', 'Okayama', 'Kumamoto', 'Nara'] },
+  { name: 'Australia', flag: '🇦🇺', cities: ['Sydney', 'Melbourne', 'Brisbane', 'Perth', 'Adelaide', 'Gold Coast', 'Canberra', 'Newcastle', 'Hobart', 'Darwin', 'Cairns', 'Townsville', 'Wollongong', 'Geelong', 'Ballarat', 'Bendigo', 'Toowoomba', 'Sunshine Coast', 'Launceston', 'Albury'] },
+  { name: 'Brazil', flag: '🇧🇷', cities: ['São Paulo', 'Rio de Janeiro', 'Brasília', 'Salvador', 'Fortaleza', 'Belo Horizonte', 'Manaus', 'Curitiba', 'Recife', 'Porto Alegre', 'Goiânia', 'Belém', 'Guarulhos', 'Campinas', 'São Luís', 'Maceió', 'Natal', 'Campo Grande', 'Florianópolis', 'João Pessoa'] },
+  { name: 'Mexico', flag: '🇲🇽', cities: ['Mexico City', 'Guadalajara', 'Monterrey', 'Puebla', 'Tijuana', 'León', 'Juárez', 'Cancún', 'Mérida', 'San Luis Potosí', 'Aguascalientes', 'Querétaro', 'Morelia', 'Chihuahua', 'Hermosillo', 'Saltillo', 'Culiacán', 'Acapulco', 'Oaxaca', 'Playa del Carmen'] },
+  { name: 'India', flag: '🇮🇳', cities: ['Mumbai', 'Delhi', 'Bangalore', 'Hyderabad', 'Chennai', 'Kolkata', 'Ahmedabad', 'Pune', 'Jaipur', 'Surat', 'Lucknow', 'Kanpur', 'Nagpur', 'Indore', 'Thane', 'Bhopal', 'Visakhapatnam', 'Patna', 'Vadodara', 'Goa'] },
+  { name: 'China', flag: '🇨🇳', cities: ['Shanghai', 'Beijing', 'Guangzhou', 'Shenzhen', 'Chengdu', 'Hangzhou', 'Wuhan', 'Xian', 'Nanjing', 'Tianjin', 'Chongqing', 'Suzhou', 'Qingdao', 'Dalian', 'Shenyang', 'Xiamen', 'Kunming', 'Zhengzhou', 'Harbin', 'Hong Kong'] },
+  { name: 'South Korea', flag: '🇰🇷', cities: ['Seoul', 'Busan', 'Incheon', 'Daegu', 'Daejeon', 'Gwangju', 'Suwon', 'Ulsan', 'Changwon', 'Seongnam', 'Goyang', 'Yongin', 'Bucheon', 'Cheongju', 'Ansan', 'Jeonju', 'Jeju City', 'Anyang', 'Pohang', 'Gimhae'] },
+  { name: 'Thailand', flag: '🇹🇭', cities: ['Bangkok', 'Chiang Mai', 'Phuket', 'Pattaya', 'Krabi', 'Hua Hin', 'Koh Samui', 'Ayutthaya', 'Sukhothai', 'Nakhon Ratchasima', 'Udon Thani', 'Khon Kaen', 'Chiang Rai', 'Hat Yai', 'Surat Thani', 'Nonthaburi', 'Pak Kret', 'Ubon Ratchathani', 'Lopburi', 'Kanchanaburi'] },
+  { name: 'Indonesia', flag: '🇮🇩', cities: ['Jakarta', 'Bali', 'Surabaya', 'Bandung', 'Medan', 'Yogyakarta', 'Semarang', 'Makassar', 'Palembang', 'Tangerang', 'Depok', 'Bogor', 'Malang', 'Lombok', 'Batam', 'Balikpapan', 'Manado', 'Padang', 'Denpasar', 'Solo'] },
+  { name: 'Vietnam', flag: '🇻🇳', cities: ['Ho Chi Minh City', 'Hanoi', 'Da Nang', 'Hai Phong', 'Can Tho', 'Nha Trang', 'Hue', 'Hoi An', 'Da Lat', 'Vung Tau', 'Quy Nhon', 'Buon Ma Thuot', 'Long Xuyen', 'Thai Nguyen', 'Phan Thiet', 'Rach Gia', 'Nam Dinh', 'Vinh', 'My Tho', 'Bien Hoa'] },
+  { name: 'Philippines', flag: '🇵🇭', cities: ['Manila', 'Cebu City', 'Davao City', 'Quezon City', 'Makati', 'Pasig', 'Taguig', 'Boracay', 'Palawan', 'Baguio', 'Iloilo City', 'Bacolod', 'Cagayan de Oro', 'Zamboanga', 'General Santos', 'Dumaguete', 'Tagaytay', 'Siargao', 'Batangas', 'Angeles City'] },
+  { name: 'Singapore', flag: '🇸🇬', cities: ['Singapore Central', 'Orchard', 'Marina Bay', 'Sentosa', 'Jurong', 'Changi', 'Tampines', 'Woodlands', 'Bugis', 'Little India', 'Chinatown', 'Clarke Quay', 'Holland Village', 'Tiong Bahru', 'Katong', 'Serangoon', 'Bedok', 'Ang Mo Kio', 'Bishan', 'Clementi'] },
+  { name: 'Malaysia', flag: '🇲🇾', cities: ['Kuala Lumpur', 'George Town', 'Johor Bahru', 'Ipoh', 'Malacca', 'Kota Kinabalu', 'Kuching', 'Shah Alam', 'Petaling Jaya', 'Langkawi', 'Cameron Highlands', 'Penang', 'Putrajaya', 'Seremban', 'Alor Setar', 'Kuala Terengganu', 'Kota Bharu', 'Miri', 'Sandakan', 'Taiping'] },
+  { name: 'Netherlands', flag: '🇳🇱', cities: ['Amsterdam', 'Rotterdam', 'The Hague', 'Utrecht', 'Eindhoven', 'Tilburg', 'Groningen', 'Breda', 'Nijmegen', 'Apeldoorn', 'Haarlem', 'Arnhem', 'Enschede', 'Maastricht', 'Dordrecht', 'Leiden', 'Delft', 'Amersfoort', 'Zwolle', 'Deventer'] },
+  { name: 'Belgium', flag: '🇧🇪', cities: ['Brussels', 'Antwerp', 'Ghent', 'Bruges', 'Liège', 'Charleroi', 'Namur', 'Leuven', 'Mons', 'Mechelen', 'Aalst', 'La Louvière', 'Kortrijk', 'Hasselt', 'Ostend', 'Sint-Niklaas', 'Tournai', 'Genk', 'Seraing', 'Roeselare'] },
+  { name: 'Switzerland', flag: '🇨🇭', cities: ['Zurich', 'Geneva', 'Basel', 'Bern', 'Lausanne', 'Winterthur', 'Lucerne', 'St. Gallen', 'Lugano', 'Biel', 'Thun', 'Köniz', 'La Chaux-de-Fonds', 'Fribourg', 'Schaffhausen', 'Chur', 'Neuchâtel', 'Vernier', 'Zermatt', 'Interlaken'] },
+  { name: 'Austria', flag: '🇦🇹', cities: ['Vienna', 'Salzburg', 'Innsbruck', 'Graz', 'Linz', 'Klagenfurt', 'Villach', 'Wels', 'St. Pölten', 'Dornbirn', 'Wiener Neustadt', 'Steyr', 'Feldkirch', 'Bregenz', 'Leonding', 'Baden', 'Wolfsberg', 'Leoben', 'Krems', 'Hallstatt'] },
+  { name: 'Portugal', flag: '🇵🇹', cities: ['Lisbon', 'Porto', 'Faro', 'Braga', 'Coimbra', 'Funchal', 'Setúbal', 'Aveiro', 'Évora', 'Viseu', 'Guimarães', 'Leiria', 'Albufeira', 'Lagos', 'Sintra', 'Cascais', 'Portimão', 'Tavira', 'Nazaré', 'Óbidos'] },
+  { name: 'Greece', flag: '🇬🇷', cities: ['Athens', 'Thessaloniki', 'Patras', 'Heraklion', 'Larissa', 'Volos', 'Rhodes', 'Ioannina', 'Chania', 'Santorini', 'Mykonos', 'Corfu', 'Kavala', 'Kalamata', 'Alexandroupoli', 'Nafplio', 'Delphi', 'Olympia', 'Meteora', 'Zakynthos'] },
+  { name: 'Turkey', flag: '🇹🇷', cities: ['Istanbul', 'Ankara', 'Izmir', 'Antalya', 'Bursa', 'Adana', 'Konya', 'Gaziantep', 'Mersin', 'Diyarbakır', 'Kayseri', 'Eskişehir', 'Samsun', 'Denizli', 'Bodrum', 'Fethiye', 'Cappadocia', 'Trabzon', 'Marmaris', 'Pamukkale'] },
+  { name: 'Egypt', flag: '🇪🇬', cities: ['Cairo', 'Alexandria', 'Giza', 'Sharm El Sheikh', 'Hurghada', 'Luxor', 'Aswan', 'Port Said', 'Suez', 'Ismailia', 'Mansoura', 'Tanta', 'Asyut', 'Fayoum', 'Zagazig', 'Dahab', 'Marsa Alam', 'Siwa', 'El Gouna', 'Nuweiba'] },
+  { name: 'South Africa', flag: '🇿🇦', cities: ['Cape Town', 'Johannesburg', 'Durban', 'Pretoria', 'Port Elizabeth', 'Bloemfontein', 'East London', 'Nelspruit', 'Kimberley', 'Polokwane', 'Pietermaritzburg', 'George', 'Stellenbosch', 'Franschhoek', 'Knysna', 'Hermanus', 'Kruger National Park', 'Soweto', 'Sandton', 'Camps Bay'] },
+  { name: 'Morocco', flag: '🇲🇦', cities: ['Marrakech', 'Casablanca', 'Fes', 'Tangier', 'Rabat', 'Agadir', 'Chefchaouen', 'Essaouira', 'Meknes', 'Ouarzazate', 'Merzouga', 'Asilah', 'El Jadida', 'Tetouan', 'Ifrane', 'Dakhla', 'Taroudant', 'Moulay Idriss', 'Ait Benhaddou', 'Todra Gorge'] },
+  { name: 'United Arab Emirates', flag: '🇦🇪', cities: ['Dubai', 'Abu Dhabi', 'Sharjah', 'Ajman', 'Ras Al Khaimah', 'Fujairah', 'Umm Al Quwain', 'Al Ain', 'Dubai Marina', 'Palm Jumeirah', 'Downtown Dubai', 'JBR', 'Deira', 'Bur Dubai', 'Business Bay', 'DIFC', 'Jumeirah', 'Al Barsha', 'Silicon Oasis', 'Sports City'] },
+  { name: 'Argentina', flag: '🇦🇷', cities: ['Buenos Aires', 'Córdoba', 'Rosario', 'Mendoza', 'La Plata', 'San Miguel de Tucumán', 'Mar del Plata', 'Salta', 'Santa Fe', 'Bariloche', 'Ushuaia', 'El Calafate', 'Iguazú', 'Neuquén', 'Posadas', 'San Juan', 'Resistencia', 'Santiago del Estero', 'Corrientes', 'Puerto Madryn'] },
+  { name: 'Colombia', flag: '🇨🇴', cities: ['Bogotá', 'Medellín', 'Cali', 'Barranquilla', 'Cartagena', 'Cúcuta', 'Bucaramanga', 'Pereira', 'Santa Marta', 'Ibagué', 'Manizales', 'Villavicencio', 'Pasto', 'Montería', 'Armenia', 'Valledupar', 'Popayán', 'Sincelejo', 'San Andrés', 'Leticia'] },
+  { name: 'Chile', flag: '🇨🇱', cities: ['Santiago', 'Valparaíso', 'Concepción', 'La Serena', 'Antofagasta', 'Temuco', 'Rancagua', 'Talca', 'Arica', 'Chillán', 'Iquique', 'Puerto Montt', 'Viña del Mar', 'Punta Arenas', 'Puerto Varas', 'San Pedro de Atacama', 'Easter Island', 'Valdivia', 'Coyhaique', 'Castro'] },
+  { name: 'Peru', flag: '🇵🇪', cities: ['Lima', 'Cusco', 'Arequipa', 'Trujillo', 'Chiclayo', 'Piura', 'Iquitos', 'Huancayo', 'Tacna', 'Puno', 'Chimbote', 'Ica', 'Juliaca', 'Sullana', 'Chincha', 'Ayacucho', 'Machu Picchu', 'Nazca', 'Paracas', 'Mancora'] },
+  { name: 'New Zealand', flag: '🇳🇿', cities: ['Auckland', 'Wellington', 'Christchurch', 'Hamilton', 'Tauranga', 'Napier-Hastings', 'Dunedin', 'Palmerston North', 'Nelson', 'Rotorua', 'Queenstown', 'New Plymouth', 'Whangarei', 'Invercargill', 'Whanganui', 'Gisborne', 'Blenheim', 'Timaru', 'Taupo', 'Picton'] },
+  { name: 'Ireland', flag: '🇮🇪', cities: ['Dublin', 'Cork', 'Limerick', 'Galway', 'Waterford', 'Drogheda', 'Kilkenny', 'Wexford', 'Sligo', 'Dundalk', 'Bray', 'Navan', 'Ennis', 'Tralee', 'Carlow', 'Naas', 'Athlone', 'Letterkenny', 'Tullamore', 'Killarney'] },
+  { name: 'Poland', flag: '🇵🇱', cities: ['Warsaw', 'Kraków', 'Łódź', 'Wrocław', 'Poznań', 'Gdańsk', 'Szczecin', 'Bydgoszcz', 'Lublin', 'Białystok', 'Katowice', 'Gdynia', 'Częstochowa', 'Radom', 'Sosnowiec', 'Toruń', 'Kielce', 'Rzeszów', 'Gliwice', 'Zakopane'] },
+  { name: 'Czech Republic', flag: '🇨🇿', cities: ['Prague', 'Brno', 'Ostrava', 'Plzeň', 'Liberec', 'Olomouc', 'České Budějovice', 'Hradec Králové', 'Ústí nad Labem', 'Pardubice', 'Zlín', 'Havířov', 'Kladno', 'Most', 'Opava', 'Karlovy Vary', 'Český Krumlov', 'Kutná Hora', 'Telč', 'Mariánské Lázně'] },
+  { name: 'Hungary', flag: '🇭🇺', cities: ['Budapest', 'Debrecen', 'Szeged', 'Miskolc', 'Pécs', 'Győr', 'Nyíregyháza', 'Kecskemét', 'Székesfehérvár', 'Szombathely', 'Szolnok', 'Tatabánya', 'Kaposvár', 'Érd', 'Veszprém', 'Békéscsaba', 'Zalaegerszeg', 'Sopron', 'Eger', 'Hévíz'] },
+  { name: 'Sweden', flag: '🇸🇪', cities: ['Stockholm', 'Gothenburg', 'Malmö', 'Uppsala', 'Västerås', 'Örebro', 'Linköping', 'Helsingborg', 'Jönköping', 'Norrköping', 'Lund', 'Umeå', 'Gävle', 'Borås', 'Södertälje', 'Eskilstuna', 'Karlstad', 'Täby', 'Växjö', 'Kiruna'] },
+  { name: 'Norway', flag: '🇳🇴', cities: ['Oslo', 'Bergen', 'Trondheim', 'Stavanger', 'Drammen', 'Fredrikstad', 'Kristiansand', 'Sandnes', 'Tromsø', 'Sarpsborg', 'Skien', 'Ålesund', 'Sandefjord', 'Haugesund', 'Tønsberg', 'Moss', 'Bodø', 'Arendal', 'Hamar', 'Lillehammer'] },
+  { name: 'Denmark', flag: '🇩🇰', cities: ['Copenhagen', 'Aarhus', 'Odense', 'Aalborg', 'Esbjerg', 'Randers', 'Kolding', 'Horsens', 'Vejle', 'Roskilde', 'Herning', 'Silkeborg', 'Næstved', 'Fredericia', 'Viborg', 'Køge', 'Holstebro', 'Taastrup', 'Slagelse', 'Helsingør'] },
+  { name: 'Finland', flag: '🇫🇮', cities: ['Helsinki', 'Espoo', 'Tampere', 'Vantaa', 'Oulu', 'Turku', 'Jyväskylä', 'Lahti', 'Kuopio', 'Pori', 'Kouvola', 'Joensuu', 'Lappeenranta', 'Hämeenlinna', 'Vaasa', 'Rovaniemi', 'Seinäjoki', 'Mikkeli', 'Kotka', 'Savonlinna'] },
+  { name: 'Russia', flag: '🇷🇺', cities: ['Moscow', 'Saint Petersburg', 'Novosibirsk', 'Yekaterinburg', 'Kazan', 'Nizhny Novgorod', 'Chelyabinsk', 'Samara', 'Omsk', 'Rostov-on-Don', 'Ufa', 'Krasnoyarsk', 'Voronezh', 'Perm', 'Volgograd', 'Krasnodar', 'Sochi', 'Vladivostok', 'Irkutsk', 'Kaliningrad'] },
+  { name: 'Israel', flag: '🇮🇱', cities: ['Tel Aviv', 'Jerusalem', 'Haifa', 'Rishon LeZion', 'Petah Tikva', 'Ashdod', 'Netanya', 'Beersheba', 'Holon', 'Bnei Brak', 'Ramat Gan', 'Ashkelon', 'Rehovot', 'Bat Yam', 'Herzliya', 'Kfar Saba', 'Modiin', 'Nazareth', 'Eilat', 'Tiberias'] },
+];
+
+const LANGUAGES = [
+  { name: 'English', flag: '🇬🇧' },
+  { name: 'Spanish', flag: '🇪🇸' },
+  { name: 'French', flag: '🇫🇷' },
+  { name: 'German', flag: '🇩🇪' },
+  { name: 'Italian', flag: '🇮🇹' },
+  { name: 'Portuguese', flag: '🇵🇹' },
+  { name: 'Japanese', flag: '🇯🇵' },
+  { name: 'Mandarin', flag: '🇨🇳' },
+  { name: 'Korean', flag: '🇰🇷' },
+  { name: 'Arabic', flag: '🇸🇦' },
+  { name: 'Russian', flag: '🇷🇺' },
+  { name: 'Hindi', flag: '🇮🇳' },
+];
+
+const TRAVEL_STYLES = [
+  { id: 'luxury', label: 'Luxury', icon: '✨' },
+  { id: 'backpacking', label: 'Backpacking', icon: '🎒' },
+  { id: 'relaxed', label: 'Relaxed', icon: '🏖️' },
+  { id: 'cultural', label: 'Cultural', icon: '🏛️' },
+  { id: 'budget', label: 'Budget', icon: '💰' },
+  { id: 'adventure', label: 'Adventure', icon: '🏔️' },
+  { id: 'party', label: 'Party', icon: '🎉' },
+  { id: 'foodie', label: 'Foodie', icon: '🍜' },
+];
+
+const DESTINATIONS = [
+  { name: 'Tokyo', image: 'https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?w=800&q=80', emoji: '🗾' },
+  { name: 'New York', image: 'https://images.unsplash.com/photo-1534430480872-3498386e7856?w=800&q=80', emoji: '🗽' },
+  { name: 'Barcelona', image: 'https://images.unsplash.com/photo-1583422409516-2895a77efded?w=800&q=80', emoji: '🏖️' },
+  { name: 'Rome', image: 'https://images.unsplash.com/photo-1552832230-c0197dd311b5?w=800&q=80', emoji: '🏛️' },
+  { name: 'London', image: 'https://images.unsplash.com/photo-1529655683826-aba9b3e77383?w=800&q=80', emoji: '🎡' },
+  { name: 'Dubai', image: 'https://images.unsplash.com/photo-1518684079-3c830dcef090?w=800&q=80', emoji: '🏙️' },
+  { name: 'Bali', image: 'https://images.unsplash.com/photo-1573790387438-4da905039392?w=800&q=80', emoji: '🏝️' },
+  { name: 'Iceland', image: 'https://images.unsplash.com/photo-1520769669658-f07657f5a307?w=800&q=80', emoji: '❄️' },
+  { name: 'Sydney', image: 'https://images.unsplash.com/photo-1506973035872-a4ec16b8e8d9?w=800&q=80', emoji: '🦘' },
+  { name: 'Santorini', image: 'https://images.unsplash.com/photo-1613395877344-13d4a8e0d49e?w=800&q=80', emoji: '🇬🇷' },
+  { name: 'Amsterdam', image: 'https://images.unsplash.com/photo-1584003564911-a7a321c03b7e?w=800&q=80', emoji: '🚲' },
+  { name: 'Prague', image: 'https://images.unsplash.com/photo-1519677100203-a0e668c92439?w=800&q=80', emoji: '🏰' },
+  { name: 'Rio de Janeiro', image: 'https://images.unsplash.com/photo-1483729558449-99ef09a8c325?w=800&q=80', emoji: '🇧🇷' },
+  { name: 'Bangkok', image: 'https://images.unsplash.com/photo-1508009603885-50cf7c579365?w=800&q=80', emoji: '🛕' },
+  { name: 'Marrakech', image: 'https://images.unsplash.com/photo-1489749798305-4fea3ae63d43?w=800&q=80', emoji: '🕌' },
+  { name: 'Cape Town', image: 'https://images.unsplash.com/photo-1580060839134-75a5edca2e99?w=800&q=80', emoji: '🦁' },
+  { name: 'Singapore', image: 'https://images.unsplash.com/photo-1565967511849-76a60a516170?w=800&q=80', emoji: '🏙️' },
+  { name: 'Machu Picchu', image: 'https://images.unsplash.com/photo-1526392060635-9d6019884377?w=800&q=80', emoji: '⛰️' },
+  { name: 'Venice', image: 'https://images.unsplash.com/photo-1514890547357-a9ee288728e0?w=800&q=80', emoji: '🚤' },
+];
+
+export default function OnboardingScreen() {
+  const router = useRouter();
+  const [currentSlide, setCurrentSlide] = useState<number>(0);
+  const [showButton, setShowButton] = useState(false);
+  const [activeUsers] = useState(Math.floor(Math.random() * 500) + 1200);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [countrySearch, setCountrySearch] = useState('');
+  const [citySearch, setCitySearch] = useState('');
+
+  // Local state for name input to prevent lag
+  const [localName, setLocalName] = useState('');
+
+  // Authentication states
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  // Premium haptics
+  const { playHeavy, playSoft, playSuccess } = usePremiumSounds();
+
+  // Face verification states
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [verificationStep, setVerificationStep] = useState<number>(0);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const verificationSteps = ['Look straight', 'Look up', 'Look right', 'Look left'];
+
+  // Calculating matches states
+  const [isCalculating, setIsCalculating] = useState(false);
+  const [calculationDone, setCalculationDone] = useState(false);
+  const [matchCount, setMatchCount] = useState(0);
+  const calculationProgress = useSharedValue(0);
+
+  // Profile photos state
+  const [profilePhotos, setProfilePhotos] = useState<string[]>([]);
+  const [showPhotoOptions, setShowPhotoOptions] = useState(false);
+
+  // Calculation progress animation style
+  const calculationProgressStyle = useAnimatedStyle(() => ({
+    width: `${calculationProgress.value}%`,
+  }));
+
+  // Start calculation when slide 16 appears (was slide 15)
+  useEffect(() => {
+    if (currentSlide === 16 && !isCalculating && !calculationDone) {
+      setIsCalculating(true);
+      calculationProgress.value = 0;
+      calculationProgress.value = withTiming(100, { duration: 3000, easing: Easing.out(Easing.cubic) });
+
+      const timer = setTimeout(() => {
+        const matches = Math.floor(Math.random() * 300) + 450;
+        setMatchCount(matches);
+        setCalculationDone(true);
+        setIsCalculating(false);
+        playSuccess();
+      }, 3000);
+
+      return () => clearTimeout(timer);
+    }
+  }, [currentSlide]);
+
+  // Bucket list swipe states - simplified for performance
+  const [currentDestinationIndex, setCurrentDestinationIndex] = useState<number>(0);
+  const translateX = useSharedValue(0);
+
+  // Preload only current + next image for performance
+  useEffect(() => {
+    const preloadImages = () => {
+      const current = DESTINATIONS[currentDestinationIndex];
+      const next = DESTINATIONS[currentDestinationIndex + 1];
+      if (current) Image.prefetch(current.image);
+      if (next) Image.prefetch(next.image);
+    };
+    preloadImages();
+  }, [currentDestinationIndex]);
+
+  // Animation shared values
+  const buttonScale = useSharedValue(1);
+  const iconPulse = useSharedValue(1);
+  const progressWidth = useSharedValue(0);
+  const rotation = useSharedValue(0);
+
+  const [data, setData] = useState<OnboardingData>({
+    name: '',
+    birthday: null,
+    country: '',
+    city: '',
+    gender: null,
+    travelWith: null,
+    bio: '',
+    placesVisited: [],
+    languages: [],
+    socialEnergy: null,
+    travelStyles: [],
+    travelPace: null,
+    groupType: null,
+    planningStyle: null,
+    experience: null,
+    verified: false,
+    bucketList: [],
+  });
+
+  useEffect(() => {
+    if (currentSlide === 0) {
+      // Show button as active after 4 seconds
+      const timer = setTimeout(() => {
+        setShowButton(true);
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [currentSlide]);
+
+  useEffect(() => {
+    rotation.value = withRepeat(
+      withTiming(360, {
+        duration: 20000,
+        easing: Easing.linear,
+      }),
+      -1
+    );
+  }, []);
+
+  // Pulse animation for icons
+  useEffect(() => {
+    iconPulse.value = withRepeat(
+      withSequence(
+        withTiming(1.1, { duration: 1000 }),
+        withTiming(1, { duration: 1000 })
+      ),
+      -1
+    );
+  }, []);
+
+  const animatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ rotate: `${rotation.value}deg` }],
+    };
+  });
+
+  const buttonAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: buttonScale.value }],
+  }));
+
+  const iconPulseStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: iconPulse.value }],
+  }));
+
+  const handleGoogleSignIn = async () => {
+    setIsAuthenticating(true);
+    setAuthError(null);
+    await playHeavy();
+
+    const result = await signInWithGoogle();
+
+    if (result.success) {
+      // Create user profile in database
+      const profileResult = await ensureUserProfile();
+
+      if (profileResult.success) {
+        setIsAuthenticated(true);
+        await playSuccess();
+        // Continue to next onboarding slide
+        setCurrentSlide(currentSlide + 1);
+      } else {
+        setAuthError(profileResult.error || "Failed to create profile");
+      }
+    } else {
+      setAuthError(result.error || "Failed to sign in");
+    }
+
+    setIsAuthenticating(false);
+  };
+
+  const handleContinue = async () => {
+    // Play sound and haptic
+    await playSoft();
+    await playHeavy();
+
+    // Animate button press
+    buttonScale.value = withSequence(
+      withTiming(0.95, { duration: 100 }),
+      withTiming(1, { duration: 100 })
+    );
+
+    // Sync local name to data when continuing from slide 3 (was slide 2)
+    if (currentSlide === 3) {
+      setData({ ...data, name: localName });
+    }
+    if (currentSlide < 20) {
+      setCurrentSlide(currentSlide + 1);
+    } else {
+      completeOnboarding();
+    }
+  };
+
+  const completeOnboarding = async () => {
+    await AsyncStorage.setItem('hasSeenOnboarding', 'true');
+    await AsyncStorage.setItem('userProfile', JSON.stringify(data));
+    router.replace('/(tabs)');
+  };
+
+  const canContinue = () => {
+    switch (currentSlide) {
+      case 3:  // Name & Birthday (was slide 2)
+        return localName.trim() !== '' && data.birthday !== null;
+      case 4:  // Location (was slide 3)
+        return data.country !== '' && data.city !== '';
+      case 5:  // Gender (was slide 4)
+        return data.gender !== null;
+      case 6:  // Travel Partner (was slide 5)
+        return data.travelWith !== null;
+      case 7:  // Bio (was slide 6)
+        return data.bio.trim().length >= 20;
+      case 8:  // Places Visited (was slide 7)
+        return data.placesVisited.length > 0;
+      case 9:  // Languages (was slide 8)
+        return data.languages.length > 0;
+      case 10:  // Social Energy (was slide 9)
+        return data.socialEnergy !== null;
+      case 11:  // Travel Styles (was slide 10)
+        return data.travelStyles.length > 0;
+      case 12:  // Travel Pace (was slide 11)
+        return data.travelPace !== null;
+      case 13:  // Group Type (was slide 12)
+        return data.groupType !== null;
+      case 14:  // Planning Style (was slide 13)
+        return data.planningStyle !== null;
+      case 15:  // Experience (was slide 14)
+        return data.experience !== null;
+      case 16:  // Verified (was slide 15)
+        return data.verified;
+      case 17:  // Bucket List (was slide 16)
+        return data.bucketList.length >= 6;
+      default:
+        return true;
+    }
+  };
+
+  const filteredCountries = HOME_COUNTRIES.filter(c =>
+    c.name.toLowerCase().includes(countrySearch.toLowerCase())
+  );
+
+  const selectedCountryData = HOME_COUNTRIES.find(c => c.name === data.country);
+  const filteredCities = selectedCountryData
+    ? selectedCountryData.cities.filter(city =>
+        city.toLowerCase().includes(citySearch.toLowerCase())
+      )
+    : [];
+
+  const toggleCountryVisit = async (country: string) => {
+    await playSoft();
+    if (data.placesVisited.includes(country)) {
+      setData({ ...data, placesVisited: data.placesVisited.filter(c => c !== country) });
+    } else {
+      setData({ ...data, placesVisited: [...data.placesVisited, country] });
+    }
+  };
+
+  const toggleLanguage = async (language: string) => {
+    await playSoft();
+    if (data.languages.includes(language)) {
+      setData({ ...data, languages: data.languages.filter(l => l !== language) });
+    } else {
+      setData({ ...data, languages: [...data.languages, language] });
+    }
+  };
+
+  const toggleTravelStyle = async (style: string) => {
+    await playSoft();
+    if (data.travelStyles.includes(style)) {
+      setData({ ...data, travelStyles: data.travelStyles.filter(s => s !== style) });
+    } else {
+      setData({ ...data, travelStyles: [...data.travelStyles, style] });
+    }
+  };
+
+  // Face verification simulation
+  const simulateVerification = () => {
+    setIsVerifying(true);
+    setTimeout(() => {
+      if (verificationStep < verificationSteps.length - 1) {
+        setVerificationStep(verificationStep + 1);
+        setIsVerifying(false);
+      } else {
+        // Complete verification
+        setData({ ...data, verified: true });
+        setIsVerifying(false);
+      }
+    }, 2000);
+  };
+
+  // Swipe gesture for bucket list - simple horizontal only
+  const cardAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [
+        { translateX: translateX.value },
+      ],
+      opacity: interpolate(Math.abs(translateX.value), [0, width * 0.8], [1, 0], 'clamp'),
+    };
+  });
+
+  // JS thread function to update state after swipe
+  const onSwipeComplete = (direction: 'left' | 'right', destIndex: number) => {
+    const destination = DESTINATIONS[destIndex];
+    if (destination && direction === 'right' && !data.bucketList.includes(destination.name)) {
+      setData({ ...data, bucketList: [...data.bucketList, destination.name] });
+    }
+    setCurrentDestinationIndex(prev => prev + 1);
+  };
+
+  // Trigger swipe animation from JS (for buttons)
+  const triggerSwipe = (direction: 'left' | 'right') => {
+    const targetX = direction === 'right' ? width : -width;
+    const destIndex = currentDestinationIndex;
+
+    translateX.value = withTiming(
+      targetX,
+      { duration: 250, easing: Easing.out(Easing.cubic) },
+      (finished) => {
+        'worklet';
+        if (finished) {
+          translateX.value = 0;
+          runOnJS(onSwipeComplete)(direction, destIndex);
+        }
+      }
+    );
+  };
+
+  const panGesture = Gesture.Pan()
+    .activeOffsetX([-10, 10])
+    .onUpdate((event) => {
+      'worklet';
+      translateX.value = event.translationX;
+    })
+    .onEnd((event) => {
+      'worklet';
+      const shouldSwipe = Math.abs(event.translationX) > width / 4 || Math.abs(event.velocityX) > 400;
+
+      if (shouldSwipe) {
+        const direction = event.translationX > 0 ? 'right' : 'left';
+        const targetX = direction === 'right' ? width : -width;
+
+        translateX.value = withTiming(
+          targetX,
+          { duration: 250, easing: Easing.out(Easing.cubic) },
+          (finished) => {
+            'worklet';
+            if (finished) {
+              translateX.value = 0;
+              runOnJS(onSwipeComplete)(direction, currentDestinationIndex);
+            }
+          }
+        );
+      } else {
+        translateX.value = withSpring(0, { damping: 20, stiffness: 300 });
+      }
+    });
+
+  // Premium gradient background component
+  const PremiumBackground = () => (
+    <LinearGradient
+      colors={['#0a0a0a', '#000000', '#0f0f0f', '#000000']}
+      locations={[0, 0.33, 0.66, 1]}
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width: width,
+        height: height,
+      }}
+    />
+  );
+
+  // Slide 0: Video Welcome
+  if (currentSlide === 0) {
+    return (
+      <View className="flex-1 bg-black">
+        <Video
+          source={require('../../public/ob--1.mp4')}
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: width,
+            height: height,
+          }}
+          resizeMode={ResizeMode.COVER}
+          shouldPlay
+          isLooping
+          isMuted={false}
+          volume={1.0}
+        />
+        <View className="flex-1 justify-end items-center pb-20">
+          <Animated.View entering={FadeInUp.delay(3500).springify()}>
+            <Pressable
+              onPress={showButton ? handleContinue : undefined}
+              disabled={!showButton}
+              className={`px-12 py-4 rounded-full ${showButton ? 'bg-emerald-500 active:opacity-80' : 'bg-gray-500'}`}
+              style={showButton ? {
+                shadowColor: '#10b981',
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.3,
+                shadowRadius: 8,
+              } : {}}
+            >
+              <Text className={`text-lg font-bold text-center ${showButton ? 'text-white' : 'text-gray-300'}`}>
+                Welcome to Tag-Along
+              </Text>
+            </Pressable>
+          </Animated.View>
+        </View>
+      </View>
+    );
+  }
+
+  // Slide 1: Active Users
+  if (currentSlide === 1) {
+    return (
+      <View className="flex-1 bg-black">
+        <PremiumBackground />
+        <SafeAreaView className="flex-1" edges={['top', 'bottom']}>
+          <View className="flex-1 justify-center items-center px-8">
+            <Animated.View
+              entering={ZoomIn.delay(100).springify()}
+              className="bg-emerald-500/10 p-6 rounded-full mb-6"
+            >
+              <Animated.View style={iconPulseStyle}>
+                <Users size={80} color="#10b981" strokeWidth={1.5} />
+              </Animated.View>
+            </Animated.View>
+            <Animated.Text
+              entering={FadeInUp.delay(300).springify()}
+              className="text-7xl font-bold text-white mt-4"
+            >
+              {activeUsers.toLocaleString()}
+            </Animated.Text>
+            <Animated.Text
+              entering={FadeInUp.delay(500).springify()}
+              className="text-2xl font-semibold text-emerald-400 mt-6"
+            >
+              Active Travelers
+            </Animated.Text>
+            <Animated.Text
+              entering={FadeInUp.delay(700).springify()}
+              className="text-base text-gray-400 mt-4 text-center leading-6"
+            >
+              Join thousands of adventurers looking for their perfect travel companion right now
+            </Animated.Text>
+          </View>
+          <Animated.View entering={FadeInUp.delay(900).springify()} className="px-6 pb-6">
+            <Animated.View style={buttonAnimatedStyle}>
+              <Pressable
+                onPress={handleContinue}
+                className="bg-emerald-500 py-5 rounded-2xl active:opacity-80"
+              >
+                <Text className="text-white text-lg font-semibold text-center">
+                  Continue
+                </Text>
+              </Pressable>
+            </Animated.View>
+          </Animated.View>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  // Slide 2: Google Authentication
+  if (currentSlide === 2) {
+    return (
+      <View className="flex-1 bg-black">
+        <PremiumBackground />
+        <SafeAreaView className="flex-1" edges={['top', 'bottom']}>
+          <View className="flex-1 justify-center items-center px-8">
+            <Animated.View
+              entering={ZoomIn.delay(100).springify()}
+              className="bg-emerald-500/10 p-6 rounded-full mb-6"
+            >
+              <Animated.View style={iconPulseStyle}>
+                <Lock size={80} color="#10b981" strokeWidth={1.5} />
+              </Animated.View>
+            </Animated.View>
+            <Animated.Text
+              entering={FadeInUp.delay(300).springify()}
+              className="text-3xl font-bold text-white mt-4 text-center"
+            >
+              Secure Your Journey
+            </Animated.Text>
+            <Animated.Text
+              entering={FadeInUp.delay(500).springify()}
+              className="text-lg text-emerald-400 mt-4 text-center"
+            >
+              Sign in with Google to continue
+            </Animated.Text>
+            <Animated.Text
+              entering={FadeInUp.delay(700).springify()}
+              className="text-base text-gray-400 mt-4 text-center leading-6"
+            >
+              Your account keeps your profile safe and lets you connect with travelers worldwide
+            </Animated.Text>
+
+            {authError && (
+              <Animated.View
+                entering={FadeInUp.springify()}
+                className="bg-red-500/20 border border-red-500/50 rounded-xl p-4 mt-6"
+              >
+                <Text className="text-red-400 text-center">{authError}</Text>
+              </Animated.View>
+            )}
+          </View>
+
+          <Animated.View entering={FadeInUp.delay(900).springify()} className="px-6 pb-6">
+            <Pressable
+              onPress={handleGoogleSignIn}
+              disabled={isAuthenticating}
+              className={`py-5 rounded-2xl flex-row items-center justify-center ${
+                isAuthenticating ? 'bg-gray-600' : 'bg-white active:opacity-80'
+              }`}
+              style={!isAuthenticating ? {
+                shadowColor: '#fff',
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.2,
+                shadowRadius: 8,
+              } : {}}
+            >
+              {isAuthenticating ? (
+                <>
+                  <ActivityIndicator size="small" color="#10b981" />
+                  <Text className="text-emerald-400 text-lg font-semibold ml-3">
+                    Signing in...
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Text className="text-2xl mr-3">🔐</Text>
+                  <Text className="text-black text-lg font-semibold">
+                    Continue with Google
+                  </Text>
+                </>
+              )}
+            </Pressable>
+          </Animated.View>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  // Slide 3: Name & Birthday (was Slide 2)
+  if (currentSlide === 3) {
+    return (
+      <View className="flex-1 bg-black">
+        <PremiumBackground />
+        <SafeAreaView className="flex-1" edges={['top', 'bottom']}>
+          <View className="flex-1 px-6 justify-center">
+            <Animated.Text entering={FadeInLeft.delay(100).springify()} className="text-4xl font-bold text-white mb-2">Basic Info</Animated.Text>
+            <Animated.Text entering={FadeInLeft.delay(200).springify()} className="text-lg text-emerald-400 mb-12">
+              Let's get started with your profile
+            </Animated.Text>
+
+            <Animated.View entering={FadeInUp.delay(300).springify()} className="mb-6">
+              <Text className="text-white text-sm font-semibold mb-3 ml-1">Your Name</Text>
+              <View className="bg-white/5 border border-white/10 rounded-2xl px-5 py-5 flex-row items-center">
+                <UserIcon size={22} color="#10b981" />
+                <TextInput
+                  value={localName}
+                  onChangeText={setLocalName}
+                  onBlur={() => setData({ ...data, name: localName })}
+                  placeholder="Enter your name"
+                  placeholderTextColor="#6b7280"
+                  className="flex-1 text-white text-lg ml-4"
+                />
+              </View>
+            </Animated.View>
+
+            <Animated.View entering={FadeInUp.delay(500).springify()} className="mb-6">
+              <Text className="text-white text-sm font-semibold mb-3 ml-1">Birthday</Text>
+              <Pressable
+                onPress={async () => {
+                  await playSoft();
+                  setShowDatePicker(true);
+                }}
+                className="bg-white/5 border border-white/10 rounded-2xl px-5 py-5 flex-row items-center"
+              >
+                <Calendar size={22} color="#10b981" />
+                <Text className={`flex-1 text-lg ml-4 ${data.birthday ? 'text-white' : 'text-gray-500'}`}>
+                  {data.birthday ? data.birthday.toLocaleDateString() : 'Select your birthday'}
+                </Text>
+              </Pressable>
+              {showDatePicker && (
+                <DateTimePicker
+                  value={data.birthday || new Date(2000, 0, 1)}
+                  mode="date"
+                  display="spinner"
+                  onChange={(event, selectedDate) => {
+                    setShowDatePicker(false);
+                    if (selectedDate) {
+                      setData({ ...data, birthday: selectedDate });
+                    }
+                  }}
+                  maximumDate={new Date()}
+                  textColor="#ffffff"
+                />
+              )}
+            </Animated.View>
+          </View>
+
+          <Animated.View entering={FadeInUp.delay(700).springify()} className="px-6 pb-6">
+            <Animated.View style={buttonAnimatedStyle}>
+              <Pressable
+                onPress={handleContinue}
+                disabled={!canContinue()}
+                className={`py-5 rounded-2xl ${canContinue() ? 'bg-emerald-500 active:opacity-80' : 'bg-white/5'}`}
+              >
+                <Text className={`text-lg font-semibold text-center ${canContinue() ? 'text-white' : 'text-gray-600'}`}>
+                  Continue
+                </Text>
+              </Pressable>
+            </Animated.View>
+          </Animated.View>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  // Slide 3: Country & City
+  if (currentSlide === 3) {
+    return (
+      <View className="flex-1 bg-black">
+        <PremiumBackground />
+        <SafeAreaView className="flex-1" edges={['top', 'bottom']}>
+          <View className="flex-1 px-6">
+            <Animated.Text entering={FadeInDown.delay(100).springify()} className="text-4xl font-bold text-white mb-2 mt-8">Where are you from?</Animated.Text>
+            <Animated.Text entering={FadeInDown.delay(200).springify()} className="text-lg text-emerald-400 mb-6">
+              Help others find local travel companions
+            </Animated.Text>
+
+            <Animated.View entering={FadeInUp.delay(300).springify()} className="mb-4">
+              <Text className="text-white text-sm font-semibold mb-3 ml-1">Country</Text>
+              <View className="bg-white/5 border border-white/10 rounded-2xl px-4 py-4 flex-row items-center mb-3">
+                <Search size={20} color="#6b7280" />
+                <TextInput
+                  value={countrySearch}
+                  onChangeText={setCountrySearch}
+                  placeholder="Search country..."
+                  placeholderTextColor="#6b7280"
+                  className="flex-1 text-white text-base ml-3"
+                />
+              </View>
+              <ScrollView className="max-h-40 bg-white/5 rounded-2xl" showsVerticalScrollIndicator={false}>
+                {filteredCountries.map((country) => (
+                  <Pressable
+                    key={country.name}
+                    onPress={async () => {
+                      await playSoft();
+                      setData({ ...data, country: country.name, city: '' });
+                      setCountrySearch('');
+                    }}
+                    className={`px-5 py-4 flex-row items-center border-b border-white/5 ${data.country === country.name ? 'bg-emerald-500/20' : ''}`}
+                  >
+                    <Text className="text-3xl mr-3">{country.flag}</Text>
+                    <Text className="text-white text-base font-medium">{country.name}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </Animated.View>
+
+            {data.country && (
+              <Animated.View entering={FadeInUp.delay(100).springify()} className="mb-4">
+                <Text className="text-white text-sm font-semibold mb-3 ml-1">City</Text>
+                <View className="bg-white/5 border border-white/10 rounded-2xl px-4 py-4 flex-row items-center mb-3">
+                  <MapPin size={20} color="#6b7280" />
+                  <TextInput
+                    value={data.city}
+                    onChangeText={(text) => {
+                      setData({ ...data, city: text });
+                      setCitySearch(text);
+                    }}
+                    placeholder="Type or search your city..."
+                    placeholderTextColor="#6b7280"
+                    className="flex-1 text-white text-base ml-3"
+                  />
+                </View>
+                {filteredCities.length > 0 && citySearch.length > 0 && (
+                  <ScrollView className="max-h-32 bg-white/5 rounded-2xl" showsVerticalScrollIndicator={false}>
+                    {filteredCities.slice(0, 5).map((city) => (
+                      <Pressable
+                        key={city}
+                        onPress={async () => {
+                          await playSoft();
+                          setData({ ...data, city });
+                          setCitySearch('');
+                        }}
+                        className={`px-5 py-4 border-b border-white/5 ${data.city === city ? 'bg-emerald-500/20' : ''}`}
+                      >
+                        <Text className="text-white text-base font-medium">{city}</Text>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+                )}
+              </Animated.View>
+            )}
+          </View>
+
+          <Animated.View entering={FadeInUp.delay(500).springify()} className="px-6 pb-6">
+            <Animated.View style={buttonAnimatedStyle}>
+              <Pressable
+                onPress={handleContinue}
+                disabled={!canContinue()}
+                className={`py-5 rounded-2xl ${canContinue() ? 'bg-emerald-500 active:opacity-80' : 'bg-white/5'}`}
+              >
+                <Text className={`text-lg font-semibold text-center ${canContinue() ? 'text-white' : 'text-gray-600'}`}>
+                  Continue
+                </Text>
+              </Pressable>
+            </Animated.View>
+          </Animated.View>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  // Slide 4: Gender
+  if (currentSlide === 4) {
+    const genderOptions = [
+      { id: 'male', label: 'Male', emoji: '👨' },
+      { id: 'female', label: 'Female', emoji: '👩' },
+      { id: 'other', label: 'Other', emoji: '🧑' },
+    ];
+
+    return (
+      <View className="flex-1 bg-black">
+        <PremiumBackground />
+        <SafeAreaView className="flex-1" edges={['top', 'bottom']}>
+          <View className="flex-1 px-6 justify-center">
+            <Animated.Text entering={FadeInLeft.delay(100).springify()} className="text-4xl font-bold text-white mb-2">What's your gender?</Animated.Text>
+            <Animated.Text entering={FadeInLeft.delay(200).springify()} className="text-lg text-emerald-400 mb-12">
+              Help us create better matches
+            </Animated.Text>
+
+            {genderOptions.map((option, index) => (
+              <Animated.View key={option.id} entering={FadeInRight.delay(300 + index * 150).springify()}>
+                <Pressable
+                  onPress={async () => {
+                    await playHeavy();
+                    setData({ ...data, gender: option.id as 'male' | 'female' | 'other' });
+                  }}
+                  className={`mb-4 py-6 px-5 rounded-2xl border flex-row items-center ${
+                    data.gender === option.id
+                      ? 'bg-emerald-500 border-emerald-400'
+                      : 'bg-white/5 border-white/10'
+                  } active:opacity-80`}
+                >
+                  <Text className="text-4xl mr-4">{option.emoji}</Text>
+                  <Text className="text-white text-xl font-semibold flex-1">
+                    {option.label}
+                  </Text>
+                </Pressable>
+              </Animated.View>
+            ))}
+          </View>
+
+          <Animated.View entering={FadeInUp.delay(800).springify()} className="px-6 pb-6">
+            <Animated.View style={buttonAnimatedStyle}>
+              <Pressable
+                onPress={handleContinue}
+                disabled={!canContinue()}
+                className={`py-5 rounded-2xl ${canContinue() ? 'bg-emerald-500 active:opacity-80' : 'bg-white/5'}`}
+              >
+                <Text className={`text-lg font-semibold text-center ${canContinue() ? 'text-white' : 'text-gray-600'}`}>
+                  Continue
+                </Text>
+              </Pressable>
+            </Animated.View>
+          </Animated.View>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  // Slide 5: Travel Partner Preference
+  if (currentSlide === 5) {
+    const travelWithOptions = [
+      { id: 'male', label: 'Male', emoji: '👨' },
+      { id: 'female', label: 'Female', emoji: '👩' },
+      { id: 'everyone', label: 'Everyone', emoji: '👥' },
+    ];
+
+    return (
+      <View className="flex-1 bg-black">
+        <PremiumBackground />
+        <SafeAreaView className="flex-1" edges={['top', 'bottom']}>
+          <View className="flex-1 px-6 justify-center">
+            <Animated.Text entering={FadeInLeft.delay(100).springify()} className="text-4xl font-bold text-white mb-2">Who do you want to travel with?</Animated.Text>
+            <Animated.Text entering={FadeInLeft.delay(200).springify()} className="text-lg text-emerald-400 mb-12">
+              Choose your preferred travel companions
+            </Animated.Text>
+
+            {travelWithOptions.map((option, index) => (
+              <Animated.View key={option.id} entering={FadeInRight.delay(300 + index * 150).springify()}>
+                <Pressable
+                  onPress={async () => {
+                    await playHeavy();
+                    setData({ ...data, travelWith: option.id as 'male' | 'female' | 'everyone' });
+                  }}
+                  className={`mb-4 py-6 px-5 rounded-2xl border flex-row items-center ${
+                    data.travelWith === option.id
+                      ? 'bg-emerald-500 border-emerald-400'
+                      : 'bg-white/5 border-white/10'
+                  } active:opacity-80`}
+                >
+                  <Text className="text-4xl mr-4">{option.emoji}</Text>
+                  <Text className="text-white text-xl font-semibold flex-1">
+                    {option.label}
+                  </Text>
+                </Pressable>
+              </Animated.View>
+            ))}
+          </View>
+
+          <Animated.View entering={FadeInUp.delay(800).springify()} className="px-6 pb-6">
+            <Animated.View style={buttonAnimatedStyle}>
+              <Pressable
+                onPress={handleContinue}
+                disabled={!canContinue()}
+                className={`py-5 rounded-2xl ${canContinue() ? 'bg-emerald-500 active:opacity-80' : 'bg-white/5'}`}
+              >
+                <Text className={`text-lg font-semibold text-center ${canContinue() ? 'text-white' : 'text-gray-600'}`}>
+                  Continue
+                </Text>
+              </Pressable>
+            </Animated.View>
+          </Animated.View>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  // Slide 6: Bio
+  if (currentSlide === 6) {
+    return (
+      <View className="flex-1 bg-black">
+        <PremiumBackground />
+        <SafeAreaView className="flex-1" edges={['top', 'bottom']}>
+          {/* Skip button at top right */}
+          <Animated.View entering={FadeIn.delay(500)} className="absolute top-0 right-0 z-10 pt-14 pr-6">
+            <Pressable
+              onPress={handleContinue}
+              className="py-2 px-4 rounded-full bg-white/10 active:opacity-60"
+            >
+              <Text className="text-white text-base font-medium">Skip</Text>
+            </Pressable>
+          </Animated.View>
+
+          <View className="flex-1 px-6 justify-center">
+            <Animated.View entering={BounceIn.delay(100)} className="flex-row items-center mb-2">
+              <Text className="text-4xl mr-3">✍️</Text>
+              <Text className="text-4xl font-bold text-white">Tell us about yourself</Text>
+            </Animated.View>
+            <Animated.Text entering={FadeInLeft.delay(200).springify()} className="text-lg text-emerald-400 mb-8">
+              Share what travelers should know about you
+            </Animated.Text>
+
+            <Animated.View entering={FadeInUp.delay(400).springify()} className="bg-white/5 border border-white/10 rounded-2xl p-5">
+              <View className="flex-row items-center mb-4">
+                <Edit3 size={20} color="#10b981" />
+                <Text className="text-emerald-400 text-sm font-semibold ml-2">
+                  Your Bio (min 20 characters)
+                </Text>
+              </View>
+              <TextInput
+                value={data.bio}
+                onChangeText={(text) => setData({ ...data, bio: text })}
+                placeholder="Tell others about your travel style, interests, what you're looking for in a travel companion..."
+                placeholderTextColor="#6b7280"
+                className="text-white text-base min-h-40"
+                multiline
+                textAlignVertical="top"
+                maxLength={500}
+              />
+              <Text className="text-gray-500 text-xs mt-3 text-right">
+                {data.bio.length}/500
+              </Text>
+            </Animated.View>
+          </View>
+
+          <Animated.View entering={FadeInUp.delay(600).springify()} className="px-6 pb-6">
+            <Animated.View style={buttonAnimatedStyle}>
+              <Pressable
+                onPress={handleContinue}
+                disabled={!canContinue()}
+                className={`py-5 rounded-2xl ${canContinue() ? 'bg-emerald-500 active:opacity-80' : 'bg-white/5'}`}
+              >
+                <Text className={`text-lg font-semibold text-center ${canContinue() ? 'text-white' : 'text-gray-600'}`}>
+                  Continue
+                </Text>
+              </Pressable>
+            </Animated.View>
+          </Animated.View>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  // Slide 7: Places Visited
+  if (currentSlide === 7) {
+    return (
+      <View className="flex-1 bg-black">
+        <PremiumBackground />
+        <SafeAreaView className="flex-1" edges={['top', 'bottom']}>
+          <ScrollView className="flex-1 px-6" showsVerticalScrollIndicator={false}>
+            <Animated.Text entering={FadeInDown.delay(100).springify()} className="text-4xl font-bold text-white mb-2 mt-8">Places you've been</Animated.Text>
+            <Animated.Text entering={FadeInDown.delay(200).springify()} className="text-lg text-emerald-400 mb-6">
+              Share your travel experiences
+            </Animated.Text>
+
+            <Animated.View entering={ZoomIn.delay(300).springify()} className="items-center mb-8">
+              <Animated.View style={[animatedStyle]}>
+                <Globe size={100} color="#10b981" strokeWidth={1.5} />
+              </Animated.View>
+            </Animated.View>
+
+            <Animated.View entering={FadeInUp.delay(500).springify()} className="flex-row flex-wrap justify-between mb-20">
+              {VISIT_COUNTRIES.map((country) => {
+                const isSelected = data.placesVisited.includes(country.name);
+                return (
+                  <Pressable
+                    key={country.name}
+                    onPress={() => toggleCountryVisit(country.name)}
+                    className={`w-[48%] mb-4 rounded-2xl overflow-hidden border-2 ${
+                      isSelected ? 'border-emerald-500' : 'border-white/10'
+                    } active:opacity-80`}
+                  >
+                    <Image
+                      source={{ uri: country.image }}
+                      style={{ width: '100%', height: 100 }}
+                      resizeMode="cover"
+                    />
+                    <View className={`p-3 ${isSelected ? 'bg-emerald-500' : 'bg-white/5'}`}>
+                      <Text className="text-white text-sm font-semibold">
+                        {country.flag} {country.name}
+                      </Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </Animated.View>
+          </ScrollView>
+
+          <Animated.View entering={FadeInUp.delay(700).springify()} className="px-6 pb-6 bg-black/50">
+            <Animated.View style={buttonAnimatedStyle}>
+              <Pressable
+                onPress={handleContinue}
+                disabled={!canContinue()}
+                className={`py-5 rounded-2xl ${canContinue() ? 'bg-emerald-500 active:opacity-80' : 'bg-white/5'}`}
+              >
+                <Text className={`text-lg font-semibold text-center ${canContinue() ? 'text-white' : 'text-gray-600'}`}>
+                  Continue
+                </Text>
+              </Pressable>
+            </Animated.View>
+          </Animated.View>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  // Slide 8: Languages
+  if (currentSlide === 8) {
+    return (
+      <View className="flex-1 bg-black">
+        <PremiumBackground />
+        <SafeAreaView className="flex-1" edges={['top', 'bottom']}>
+          <View className="flex-1 px-6">
+            <Animated.Text entering={FadeInDown.delay(100).springify()} className="text-4xl font-bold text-white mb-2 mt-8">What languages do you speak?</Animated.Text>
+            <Animated.Text entering={FadeInDown.delay(200).springify()} className="text-lg text-emerald-400 mb-8">
+              Select all that apply
+            </Animated.Text>
+
+            <ScrollView className="flex-1 mb-4" showsVerticalScrollIndicator={false}>
+              {LANGUAGES.map((language, index) => {
+                const isSelected = data.languages.includes(language.name);
+                return (
+                  <Animated.View key={language.name} entering={FadeInRight.delay(300 + index * 80).springify()}>
+                    <Pressable
+                      onPress={() => toggleLanguage(language.name)}
+                      className={`mb-3 py-5 px-5 rounded-2xl border flex-row items-center ${
+                        isSelected ? 'bg-emerald-500 border-emerald-400' : 'bg-white/5 border-white/10'
+                      } active:opacity-80`}
+                    >
+                      <Text className="text-3xl mr-4">{language.flag}</Text>
+                      <Text className="text-white text-lg font-medium flex-1">{language.name}</Text>
+                      {isSelected && <Text className="text-white text-2xl">✓</Text>}
+                    </Pressable>
+                  </Animated.View>
+                );
+              })}
+            </ScrollView>
+          </View>
+
+          <Animated.View entering={FadeInUp.delay(800).springify()} className="px-6 pb-6">
+            <Animated.View style={buttonAnimatedStyle}>
+              <Pressable
+                onPress={handleContinue}
+                disabled={!canContinue()}
+                className={`py-5 rounded-2xl ${canContinue() ? 'bg-emerald-500 active:opacity-80' : 'bg-white/5'}`}
+              >
+                <Text className={`text-lg font-semibold text-center ${canContinue() ? 'text-white' : 'text-gray-600'}`}>
+                  Continue
+                </Text>
+              </Pressable>
+            </Animated.View>
+          </Animated.View>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  // Slide 9: Social Energy
+  if (currentSlide === 9) {
+    const energyTypes = [
+      { id: 'introvert', label: 'Introvert', desc: 'Prefer smaller groups and quiet time', emoji: '🧘' },
+      { id: 'extrovert', label: 'Extrovert', desc: 'Love meeting new people and socializing', emoji: '🎉' },
+      { id: 'ambivert', label: 'Ambivert', desc: 'Balanced mix of both', emoji: '⚖️' },
+    ];
+
+    return (
+      <View className="flex-1 bg-black">
+        <PremiumBackground />
+        <SafeAreaView className="flex-1" edges={['top', 'bottom']}>
+          <View className="flex-1 px-6 justify-center">
+            <Animated.Text entering={FadeInLeft.delay(100).springify()} className="text-4xl font-bold text-white mb-2">What's your social energy?</Animated.Text>
+            <Animated.Text entering={FadeInLeft.delay(200).springify()} className="text-lg text-emerald-400 mb-12">
+              How do you recharge?
+            </Animated.Text>
+
+            {energyTypes.map((type, index) => (
+              <Animated.View key={type.id} entering={FadeInRight.delay(300 + index * 150).springify()}>
+                <Pressable
+                  onPress={async () => {
+                    await playHeavy();
+                    setData({ ...data, socialEnergy: type.id as 'introvert' | 'extrovert' | 'ambivert' });
+                  }}
+                  className={`mb-4 py-5 px-5 rounded-2xl border flex-row items-center ${
+                    data.socialEnergy === type.id
+                      ? 'bg-emerald-500 border-emerald-400'
+                      : 'bg-white/5 border-white/10'
+                  } active:opacity-80`}
+                >
+                  <Text className="text-4xl mr-4">{type.emoji}</Text>
+                  <View className="flex-1">
+                    <Text className="text-white text-xl font-semibold mb-1">{type.label}</Text>
+                    <Text className="text-gray-400 text-sm">{type.desc}</Text>
+                  </View>
+                </Pressable>
+              </Animated.View>
+            ))}
+          </View>
+
+          <Animated.View entering={FadeInUp.delay(800).springify()} className="px-6 pb-6">
+            <Animated.View style={buttonAnimatedStyle}>
+              <Pressable
+                onPress={handleContinue}
+                disabled={!canContinue()}
+                className={`py-5 rounded-2xl ${canContinue() ? 'bg-emerald-500 active:opacity-80' : 'bg-white/5'}`}
+              >
+                <Text className={`text-lg font-semibold text-center ${canContinue() ? 'text-white' : 'text-gray-600'}`}>
+                  Continue
+                </Text>
+              </Pressable>
+            </Animated.View>
+          </Animated.View>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  // Slide 10: Travel Styles
+  if (currentSlide === 10) {
+    return (
+      <View className="flex-1 bg-black">
+        <PremiumBackground />
+        <SafeAreaView className="flex-1" edges={['top', 'bottom']}>
+          <View className="flex-1 px-6">
+            <Animated.Text entering={FadeInDown.delay(100).springify()} className="text-4xl font-bold text-white mb-2 mt-8">How do you like to travel?</Animated.Text>
+            <Animated.Text entering={FadeInDown.delay(200).springify()} className="text-lg text-emerald-400 mb-8">
+              Select all that apply
+            </Animated.Text>
+
+            <ScrollView className="flex-1 mb-4" showsVerticalScrollIndicator={false}>
+              <View className="flex-row flex-wrap justify-between">
+                {TRAVEL_STYLES.map((style, index) => {
+                  const isSelected = data.travelStyles.includes(style.id);
+                  return (
+                    <Animated.View key={style.id} entering={ZoomIn.delay(300 + index * 100).springify()} className="w-[48%]">
+                      <Pressable
+                        onPress={() => toggleTravelStyle(style.id)}
+                        className={`mb-4 py-6 rounded-2xl border items-center ${
+                          isSelected ? 'bg-emerald-500 border-emerald-400' : 'bg-white/5 border-white/10'
+                        } active:opacity-80`}
+                      >
+                        <Text className="text-4xl mb-3">{style.icon}</Text>
+                        <Text className="text-white text-base font-semibold">{style.label}</Text>
+                      </Pressable>
+                    </Animated.View>
+                  );
+                })}
+              </View>
+            </ScrollView>
+          </View>
+
+          <Animated.View entering={FadeInUp.delay(900).springify()} className="px-6 pb-6">
+            <Animated.View style={buttonAnimatedStyle}>
+              <Pressable
+                onPress={handleContinue}
+                disabled={!canContinue()}
+                className={`py-5 rounded-2xl ${canContinue() ? 'bg-emerald-500 active:opacity-80' : 'bg-white/5'}`}
+              >
+                <Text className={`text-lg font-semibold text-center ${canContinue() ? 'text-white' : 'text-gray-600'}`}>
+                  Continue
+                </Text>
+              </Pressable>
+            </Animated.View>
+          </Animated.View>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  // Slide 11: Travel Pace
+  if (currentSlide === 11) {
+    const paceOptions = [
+      { id: 'slow', label: 'Slow and Steady', emoji: '🐢' },
+      { id: 'balanced', label: 'Balanced', emoji: '⚖️' },
+      { id: 'fast', label: 'GO GO GO!', emoji: '🚀' },
+    ];
+
+    return (
+      <View className="flex-1 bg-black">
+        <PremiumBackground />
+        <SafeAreaView className="flex-1" edges={['top', 'bottom']}>
+          <View className="flex-1 px-6 justify-center">
+            <Animated.Text entering={FadeInLeft.delay(100).springify()} className="text-4xl font-bold text-white mb-2">What's your daily travel pace?</Animated.Text>
+            <Animated.Text entering={FadeInLeft.delay(200).springify()} className="text-lg text-emerald-400 mb-12">
+              How do you like to explore?
+            </Animated.Text>
+
+            {paceOptions.map((pace, index) => (
+              <Animated.View key={pace.id} entering={FadeInRight.delay(300 + index * 150).springify()}>
+                <Pressable
+                  onPress={async () => {
+                    await playHeavy();
+                    setData({ ...data, travelPace: pace.id as 'slow' | 'balanced' | 'fast' });
+                  }}
+                  className={`mb-4 py-6 px-5 rounded-2xl border flex-row items-center ${
+                    data.travelPace === pace.id
+                      ? 'bg-emerald-500 border-emerald-400'
+                      : 'bg-white/5 border-white/10'
+                  } active:opacity-80`}
+                >
+                  <Text className="text-4xl mr-4">{pace.emoji}</Text>
+                  <Text className="text-white text-xl font-semibold flex-1">{pace.label}</Text>
+                </Pressable>
+              </Animated.View>
+            ))}
+          </View>
+
+          <Animated.View entering={FadeInUp.delay(800).springify()} className="px-6 pb-6">
+            <Animated.View style={buttonAnimatedStyle}>
+              <Pressable
+                onPress={handleContinue}
+                disabled={!canContinue()}
+                className={`py-5 rounded-2xl ${canContinue() ? 'bg-emerald-500 active:opacity-80' : 'bg-white/5'}`}
+              >
+                <Text className={`text-lg font-semibold text-center ${canContinue() ? 'text-white' : 'text-gray-600'}`}>
+                  Continue
+                </Text>
+              </Pressable>
+            </Animated.View>
+          </Animated.View>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  // Slide 12: Travel Group Type
+  if (currentSlide === 12) {
+    const groupTypes = [
+      { id: 'close-knit', label: 'Close-Knit', desc: '2-3 people I can deeply connect with', emoji: '🤝' },
+      { id: 'open', label: 'Open Group', desc: 'Meet many people along the way', emoji: '🌍' },
+    ];
+
+    return (
+      <View className="flex-1 bg-black">
+        <PremiumBackground />
+        <SafeAreaView className="flex-1" edges={['top', 'bottom']}>
+          <View className="flex-1 px-6 justify-center">
+            <Animated.Text entering={FadeInLeft.delay(100).springify()} className="text-4xl font-bold text-white mb-2">Your ideal travel group?</Animated.Text>
+            <Animated.Text entering={FadeInLeft.delay(200).springify()} className="text-lg text-emerald-400 mb-12">
+              What feels right for you?
+            </Animated.Text>
+
+            {groupTypes.map((type, index) => (
+              <Animated.View key={type.id} entering={FadeInRight.delay(300 + index * 150).springify()}>
+                <Pressable
+                  onPress={async () => {
+                    await playHeavy();
+                    setData({ ...data, groupType: type.id as 'close-knit' | 'open' });
+                  }}
+                  className={`mb-4 py-6 px-5 rounded-2xl border flex-row items-center ${
+                    data.groupType === type.id
+                      ? 'bg-emerald-500 border-emerald-400'
+                      : 'bg-white/5 border-white/10'
+                  } active:opacity-80`}
+                >
+                  <Text className="text-4xl mr-4">{type.emoji}</Text>
+                  <View className="flex-1">
+                    <Text className="text-white text-xl font-semibold mb-1">{type.label}</Text>
+                    <Text className="text-gray-400 text-sm">{type.desc}</Text>
+                  </View>
+                </Pressable>
+              </Animated.View>
+            ))}
+          </View>
+
+          <Animated.View entering={FadeInUp.delay(700).springify()} className="px-6 pb-6">
+            <Animated.View style={buttonAnimatedStyle}>
+              <Pressable
+                onPress={handleContinue}
+                disabled={!canContinue()}
+                className={`py-5 rounded-2xl ${canContinue() ? 'bg-emerald-500 active:opacity-80' : 'bg-white/5'}`}
+              >
+                <Text className={`text-lg font-semibold text-center ${canContinue() ? 'text-white' : 'text-gray-600'}`}>
+                  Continue
+                </Text>
+              </Pressable>
+            </Animated.View>
+          </Animated.View>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  // Slide 13: Planning Style
+  if (currentSlide === 13) {
+    const planningStyles = [
+      { id: 'planner', label: 'Planner', emoji: '📋' },
+      { id: 'spontaneous', label: 'Spontaneous', emoji: '🎲' },
+      { id: 'flexible', label: 'Flexible', emoji: '🌊' },
+    ];
+
+    return (
+      <View className="flex-1 bg-black">
+        <PremiumBackground />
+        <SafeAreaView className="flex-1" edges={['top', 'bottom']}>
+          <View className="flex-1 px-6 justify-center">
+            <Animated.Text entering={FadeInLeft.delay(100).springify()} className="text-4xl font-bold text-white mb-2">Planning vs Spontaneous?</Animated.Text>
+            <Animated.Text entering={FadeInLeft.delay(200).springify()} className="text-lg text-emerald-400 mb-12">
+              How do you approach travel?
+            </Animated.Text>
+
+            {planningStyles.map((style, index) => (
+              <Animated.View key={style.id} entering={FadeInRight.delay(300 + index * 150).springify()}>
+                <Pressable
+                  onPress={async () => {
+                    await playHeavy();
+                    setData({ ...data, planningStyle: style.id as 'planner' | 'spontaneous' | 'flexible' });
+                  }}
+                  className={`mb-4 py-6 px-5 rounded-2xl border flex-row items-center ${
+                    data.planningStyle === style.id
+                      ? 'bg-emerald-500 border-emerald-400'
+                      : 'bg-white/5 border-white/10'
+                  } active:opacity-80`}
+                >
+                  <Text className="text-4xl mr-4">{style.emoji}</Text>
+                  <Text className="text-white text-xl font-semibold flex-1">{style.label}</Text>
+                </Pressable>
+              </Animated.View>
+            ))}
+          </View>
+
+          <Animated.View entering={FadeInUp.delay(800).springify()} className="px-6 pb-6">
+            <Animated.View style={buttonAnimatedStyle}>
+              <Pressable
+                onPress={handleContinue}
+                disabled={!canContinue()}
+                className={`py-5 rounded-2xl ${canContinue() ? 'bg-emerald-500 active:opacity-80' : 'bg-white/5'}`}
+              >
+                <Text className={`text-lg font-semibold text-center ${canContinue() ? 'text-white' : 'text-gray-600'}`}>
+                  Continue
+                </Text>
+              </Pressable>
+            </Animated.View>
+          </Animated.View>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  // Slide 14: Travel Experience
+  if (currentSlide === 14) {
+    const experienceLevels = [
+      { id: 'beginner', label: '🌱 Beginner', desc: 'Just starting my travel journey' },
+      { id: 'intermediate', label: '🎒 Intermediate', desc: 'Been to a few places, eager for more' },
+      { id: 'experienced', label: '🗺️ Experienced', desc: 'Traveled extensively, confident explorer' },
+      { id: 'expert', label: '🏆 Expert', desc: 'Seasoned traveler, can guide others' },
+    ];
+
+    return (
+      <View className="flex-1 bg-black">
+        <PremiumBackground />
+        <SafeAreaView className="flex-1" edges={['top', 'bottom']}>
+          <View className="flex-1 px-6 justify-center">
+            <Animated.Text entering={FadeInLeft.delay(100).springify()} className="text-4xl font-bold text-white mb-2">What's your travel experience?</Animated.Text>
+            <Animated.Text entering={FadeInLeft.delay(200).springify()} className="text-lg text-emerald-400 mb-12">
+              Where are you on your journey?
+            </Animated.Text>
+
+            {experienceLevels.map((level, index) => (
+              <Animated.View key={level.id} entering={FadeInRight.delay(300 + index * 120).springify()}>
+                <Pressable
+                  onPress={async () => {
+                    await playHeavy();
+                    setData({ ...data, experience: level.id as 'beginner' | 'intermediate' | 'experienced' | 'expert' });
+                  }}
+                  className={`mb-4 py-5 px-5 rounded-2xl border ${
+                    data.experience === level.id
+                      ? 'bg-emerald-500 border-emerald-400'
+                      : 'bg-white/5 border-white/10'
+                  } active:opacity-80`}
+                >
+                  <Text className="text-white text-xl font-semibold mb-1">{level.label}</Text>
+                  <Text className="text-gray-400 text-sm">{level.desc}</Text>
+                </Pressable>
+              </Animated.View>
+            ))}
+          </View>
+
+          <Animated.View entering={FadeInUp.delay(900).springify()} className="px-6 pb-6">
+            <Animated.View style={buttonAnimatedStyle}>
+              <Pressable
+                onPress={handleContinue}
+                disabled={!canContinue()}
+                className={`py-5 rounded-2xl ${canContinue() ? 'bg-emerald-500 active:opacity-80' : 'bg-white/5'}`}
+              >
+                <Text className={`text-lg font-semibold text-center ${canContinue() ? 'text-white' : 'text-gray-600'}`}>
+                  Continue
+                </Text>
+              </Pressable>
+            </Animated.View>
+          </Animated.View>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  // Slide 15: Calculating Matches
+  if (currentSlide === 15) {
+    return (
+      <View className="flex-1 bg-black">
+        <PremiumBackground />
+        <SafeAreaView className="flex-1" edges={['top', 'bottom']}>
+          <View className="flex-1 justify-center items-center px-6">
+            {!calculationDone ? (
+              <>
+                <Animated.View entering={ZoomIn.springify()} className="mb-8">
+                  <View className="bg-emerald-500/10 p-8 rounded-full">
+                    <Animated.View style={animatedStyle}>
+                      <Globe size={80} color="#10b981" strokeWidth={1.5} />
+                    </Animated.View>
+                  </View>
+                </Animated.View>
+
+                <Animated.Text entering={FadeInUp.delay(200).springify()} className="text-3xl font-bold text-white text-center mb-4">
+                  Finding Your Matches
+                </Animated.Text>
+
+                <Animated.Text entering={FadeInUp.delay(400).springify()} className="text-lg text-gray-400 text-center mb-8">
+                  Analyzing your travel preferences...
+                </Animated.Text>
+
+                <Animated.View entering={FadeIn.delay(600)} className="w-full px-4">
+                  <View className="bg-white/10 h-3 rounded-full overflow-hidden">
+                    <Animated.View
+                      className="bg-emerald-500 h-full rounded-full"
+                      style={calculationProgressStyle}
+                    />
+                  </View>
+                </Animated.View>
+
+                <Animated.Text entering={FadeIn.delay(800)} className="text-gray-500 text-sm mt-4">
+                  This may take a moment...
+                </Animated.Text>
+              </>
+            ) : (
+              <>
+                <Animated.View entering={BounceIn} className="mb-6">
+                  <View className="bg-emerald-500/20 p-6 rounded-full">
+                    <Check size={60} color="#10b981" strokeWidth={2} />
+                  </View>
+                </Animated.View>
+
+                <Animated.Text entering={FadeInUp.delay(200).springify()} className="text-5xl font-bold text-emerald-400 mb-2">
+                  {matchCount.toLocaleString()}
+                </Animated.Text>
+
+                <Animated.Text entering={FadeInUp.delay(400).springify()} className="text-2xl font-semibold text-white mb-4">
+                  Travelers Match With You!
+                </Animated.Text>
+
+                <Animated.Text entering={FadeInUp.delay(600).springify()} className="text-base text-gray-400 text-center mb-12 px-4">
+                  Based on your preferences, travel style, and destinations
+                </Animated.Text>
+
+                <Animated.View entering={FadeInUp.delay(800).springify()} className="w-full px-4">
+                  <Pressable
+                    onPress={async () => {
+                      await playHeavy();
+                      handleContinue();
+                    }}
+                    className="bg-emerald-500 py-5 rounded-2xl active:opacity-80"
+                  >
+                    <Text className="text-white text-lg font-semibold text-center">
+                      Continue
+                    </Text>
+                  </Pressable>
+                </Animated.View>
+              </>
+            )}
+          </View>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  // Slide 16: Profile Photos
+  if (currentSlide === 16) {
+    const pickImageFromLibrary = async () => {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+      if (status !== 'granted') {
+        Alert.alert(
+          'Permission Required',
+          'Please allow access to your photo library to add profile pictures.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [3, 4],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        if (profilePhotos.length < 4) {
+          setProfilePhotos([...profilePhotos, result.assets[0].uri]);
+          playHeavy();
+        }
+      }
+      setShowPhotoOptions(false);
+    };
+
+    const takePhoto = async () => {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+
+      if (status !== 'granted') {
+        Alert.alert(
+          'Permission Required',
+          'Please allow access to your camera to take a profile picture.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [3, 4],
+        quality: 0.8,
+        cameraType: ImagePicker.CameraType.front,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        if (profilePhotos.length < 4) {
+          setProfilePhotos([...profilePhotos, result.assets[0].uri]);
+          playHeavy();
+        }
+      }
+      setShowPhotoOptions(false);
+    };
+
+    const removePhoto = (index: number) => {
+      setProfilePhotos(profilePhotos.filter((_, i) => i !== index));
+      playSoft();
+    };
+
+    const handleAddPhoto = () => {
+      if (profilePhotos.length >= 4) return;
+      setShowPhotoOptions(true);
+    };
+
+    return (
+      <View className="flex-1 bg-black">
+        <PremiumBackground />
+        <SafeAreaView className="flex-1" edges={['top', 'bottom']}>
+          <View className="flex-1">
+            {/* Header */}
+            <View className="px-6 pt-6 pb-4">
+              <Animated.Text entering={FadeInDown.delay(100).springify()} className="text-4xl font-bold text-white mb-2">
+                Add Your Photos
+              </Animated.Text>
+              <Animated.Text entering={FadeInDown.delay(200).springify()} className="text-base text-gray-400">
+                Other travelers will see your profile pictures
+              </Animated.Text>
+            </View>
+
+            {/* Photo requirement badge */}
+            <Animated.View entering={FadeIn.delay(300)} className="mx-6 mb-6">
+              <View className={`flex-row items-center px-4 py-3 rounded-xl ${profilePhotos.length >= 3 ? 'bg-emerald-500/20' : 'bg-amber-500/20'}`}>
+                {profilePhotos.length >= 3 ? (
+                  <Check size={20} color="#10b981" strokeWidth={2} />
+                ) : (
+                  <CameraIcon size={20} color="#f59e0b" strokeWidth={2} />
+                )}
+                <Text className={`ml-2 font-medium ${profilePhotos.length >= 3 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                  {profilePhotos.length >= 3
+                    ? 'Looking great!'
+                    : `Minimum 3 photos required (${profilePhotos.length}/3)`
+                  }
+                </Text>
+              </View>
+            </Animated.View>
+
+            {/* Photo grid */}
+            <Animated.View entering={FadeInUp.delay(400).springify()} className="flex-1 px-6">
+              <View className="flex-row flex-wrap justify-between">
+                {[0, 1, 2, 3].map((index) => (
+                  <Pressable
+                    key={index}
+                    onPress={() => profilePhotos[index] ? removePhoto(index) : handleAddPhoto()}
+                    className="mb-4"
+                    style={{ width: (width - 60) / 2 }}
+                  >
+                    <View
+                      className={`aspect-[3/4] rounded-2xl overflow-hidden ${
+                        profilePhotos[index] ? 'border-2 border-emerald-500' : 'border-2 border-dashed border-white/20'
+                      }`}
+                    >
+                      {profilePhotos[index] ? (
+                        <View className="flex-1">
+                          <Image
+                            source={{ uri: profilePhotos[index] }}
+                            style={{ width: '100%', height: '100%' }}
+                            resizeMode="cover"
+                          />
+                          <View className="absolute top-2 right-2 bg-black/60 rounded-full p-1">
+                            <X size={16} color="#ef4444" strokeWidth={2} />
+                          </View>
+                          {index === 0 && (
+                            <View className="absolute bottom-2 left-2 bg-emerald-500 px-2 py-1 rounded-lg">
+                              <Text className="text-white text-xs font-semibold">Main</Text>
+                            </View>
+                          )}
+                        </View>
+                      ) : (
+                        <View className="flex-1 items-center justify-center bg-white/5">
+                          <View className="bg-white/10 p-4 rounded-full mb-2">
+                            <CameraIcon size={24} color="#6b7280" strokeWidth={1.5} />
+                          </View>
+                          <Text className="text-gray-500 text-sm">Add Photo</Text>
+                        </View>
+                      )}
+                    </View>
+                  </Pressable>
+                ))}
+              </View>
+
+              <Text className="text-gray-500 text-sm text-center mt-2">
+                Tap to add or remove photos
+              </Text>
+            </Animated.View>
+
+            {/* Continue button */}
+            <Animated.View entering={FadeInUp.delay(600).springify()} className="px-6 pb-6">
+              <Pressable
+                onPress={async () => {
+                  await playSuccess();
+                  handleContinue();
+                }}
+                disabled={profilePhotos.length < 3}
+                className={`py-5 rounded-2xl ${profilePhotos.length >= 3 ? 'bg-emerald-500 active:opacity-80' : 'bg-white/5'}`}
+              >
+                <Text className={`text-lg font-semibold text-center ${profilePhotos.length >= 3 ? 'text-white' : 'text-gray-600'}`}>
+                  Continue
+                </Text>
+              </Pressable>
+            </Animated.View>
+          </View>
+
+          {/* Photo options modal */}
+          {showPhotoOptions && (
+            <Pressable
+              className="absolute inset-0 bg-black/70 justify-end"
+              onPress={() => setShowPhotoOptions(false)}
+            >
+              <Animated.View entering={FadeInUp.springify()} className="bg-neutral-900 rounded-t-3xl p-6 pb-10">
+                <View className="w-12 h-1 bg-white/20 rounded-full self-center mb-6" />
+
+                <Text className="text-white text-xl font-bold mb-6 text-center">
+                  Add Profile Photo
+                </Text>
+
+                <Pressable
+                  onPress={takePhoto}
+                  className="flex-row items-center bg-white/10 p-4 rounded-2xl mb-3 active:opacity-70"
+                >
+                  <View className="bg-emerald-500/20 p-3 rounded-full mr-4">
+                    <CameraIcon size={24} color="#10b981" strokeWidth={2} />
+                  </View>
+                  <View className="flex-1">
+                    <Text className="text-white font-semibold text-base">Take Photo</Text>
+                    <Text className="text-gray-400 text-sm">Use your camera</Text>
+                  </View>
+                </Pressable>
+
+                <Pressable
+                  onPress={pickImageFromLibrary}
+                  className="flex-row items-center bg-white/10 p-4 rounded-2xl mb-6 active:opacity-70"
+                >
+                  <View className="bg-emerald-500/20 p-3 rounded-full mr-4">
+                    <ImageIcon size={24} color="#10b981" strokeWidth={2} />
+                  </View>
+                  <View className="flex-1">
+                    <Text className="text-white font-semibold text-base">Choose from Library</Text>
+                    <Text className="text-gray-400 text-sm">Select from your photos</Text>
+                  </View>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => setShowPhotoOptions(false)}
+                  className="py-4 rounded-2xl border border-white/20 active:opacity-70"
+                >
+                  <Text className="text-white font-semibold text-center">Cancel</Text>
+                </Pressable>
+              </Animated.View>
+            </Pressable>
+          )}
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  // Slide 17: Verify Human Intro
+  if (currentSlide === 17) {
+    return (
+      <View className="flex-1 bg-black">
+        <PremiumBackground />
+        <SafeAreaView className="flex-1" edges={['top', 'bottom']}>
+          <View className="flex-1 justify-center items-center px-6">
+            <Animated.View entering={ZoomIn.delay(100).springify()} className="mb-8">
+              <View className="bg-emerald-500/10 p-8 rounded-full">
+                <UserIcon size={80} color="#10b981" strokeWidth={1.5} />
+              </View>
+            </Animated.View>
+
+            <Animated.Text entering={FadeInUp.delay(200).springify()} className="text-4xl font-bold text-white text-center mb-4">
+              Last Step!
+            </Animated.Text>
+
+            <Animated.Text entering={FadeInUp.delay(300).springify()} className="text-2xl font-semibold text-emerald-400 text-center mb-6">
+              Please verify you're human
+            </Animated.Text>
+
+            <Animated.Text entering={FadeInUp.delay(400).springify()} className="text-base text-gray-400 text-center mb-4 px-4">
+              For the safety of our community, we verify all members through a quick face scan.
+            </Animated.Text>
+
+            <Animated.View entering={FadeIn.delay(500)} className="bg-white/5 rounded-2xl p-4 mb-12">
+              <View className="flex-row items-center">
+                <View className="bg-emerald-500/20 p-2 rounded-full mr-3">
+                  <Check size={16} color="#10b981" strokeWidth={2} />
+                </View>
+                <Text className="text-gray-300 text-sm flex-1">
+                  This will verify your account and unlock all features
+                </Text>
+              </View>
+            </Animated.View>
+
+            <Animated.View entering={FadeInUp.delay(600).springify()} className="w-full">
+              <Pressable
+                onPress={async () => {
+                  await playHeavy();
+                  handleContinue();
+                }}
+                className="bg-emerald-500 py-5 rounded-2xl active:opacity-80"
+              >
+                <Text className="text-white text-lg font-semibold text-center">
+                  Continue to Verification
+                </Text>
+              </Pressable>
+            </Animated.View>
+
+            <Animated.Text entering={FadeIn.delay(700)} className="text-gray-600 text-xs text-center mt-4">
+              Your face data is processed securely and never stored
+            </Animated.Text>
+          </View>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  // Slide 18: Face Verification
+  if (currentSlide === 18) {
+    if (!cameraPermission) {
+      return (
+        <View className="flex-1 bg-black items-center justify-center">
+          <ActivityIndicator size="large" color="#10b981" />
+        </View>
+      );
+    }
+
+    if (!cameraPermission.granted) {
+      return (
+        <View className="flex-1 bg-black">
+          <PremiumBackground />
+          <SafeAreaView className="flex-1" edges={['top', 'bottom']}>
+            <View className="flex-1 px-6 justify-center items-center">
+              <Animated.View entering={ZoomIn.delay(100).springify()} className="bg-emerald-500/10 p-6 rounded-full mb-6">
+                <CameraIcon size={80} color="#10b981" strokeWidth={1.5} />
+              </Animated.View>
+              <Animated.Text entering={FadeInUp.delay(300).springify()} className="text-4xl font-bold text-white mb-4 text-center">Face Verification</Animated.Text>
+              <Animated.Text entering={FadeInUp.delay(400).springify()} className="text-lg text-gray-400 mb-12 text-center">
+                We need to verify you're human for safety and trust
+              </Animated.Text>
+              <Animated.View entering={FadeInUp.delay(600).springify()}>
+                <Pressable
+                  onPress={requestCameraPermission}
+                  className="bg-emerald-500 px-12 py-5 rounded-2xl active:opacity-80"
+                >
+                  <Text className="text-white text-lg font-semibold">
+                    Allow Camera Access
+                  </Text>
+                </Pressable>
+              </Animated.View>
+            </View>
+          </SafeAreaView>
+        </View>
+      );
+    }
+
+    return (
+      <View className="flex-1 bg-black">
+        <CameraView
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: width,
+            height: height,
+          }}
+          facing="front"
+        />
+        <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
+          <View style={{ flex: 1 }}>
+            {/* Header */}
+            <Animated.View entering={FadeInDown.delay(100).springify()} className="px-6 pt-4">
+              <Text className="text-white text-2xl font-bold text-center">
+                Face Verification
+              </Text>
+              <Text className="text-gray-300 text-base text-center mt-2">
+                Follow the instructions below
+              </Text>
+            </Animated.View>
+
+            {/* Center instruction */}
+            <View className="flex-1 justify-center items-center">
+              <Animated.View entering={ZoomIn.delay(300).springify()} className="bg-black/60 px-8 py-6 rounded-3xl border-2 border-emerald-500">
+                {data.verified ? (
+                  <Animated.View entering={BounceIn} className="items-center">
+                    <View className="bg-emerald-500 rounded-full p-4 mb-4">
+                      <Check size={60} color="#ffffff" strokeWidth={3} />
+                    </View>
+                    <Text className="text-white text-2xl font-bold">Verified!</Text>
+                    <Text className="text-gray-300 text-base mt-2">You're all set</Text>
+                  </Animated.View>
+                ) : (
+                  <View className="items-center">
+                    {verificationStep === 0 && <UserIcon size={60} color="#10b981" strokeWidth={2} />}
+                    {verificationStep === 1 && <ArrowUp size={60} color="#10b981" strokeWidth={2} />}
+                    {verificationStep === 2 && <ArrowRight size={60} color="#10b981" strokeWidth={2} />}
+                    {verificationStep === 3 && <ArrowLeft size={60} color="#10b981" strokeWidth={2} />}
+                    <Text className="text-white text-2xl font-bold mt-4">
+                      {verificationSteps[verificationStep]}
+                    </Text>
+                    {isVerifying && (
+                      <ActivityIndicator size="large" color="#10b981" style={{ marginTop: 16 }} />
+                    )}
+                  </View>
+                )}
+              </Animated.View>
+            </View>
+
+            {/* Progress indicators */}
+            <View className="px-6 pb-4">
+              <View className="flex-row justify-center mb-6">
+                {verificationSteps.map((_, index) => (
+                  <Animated.View
+                    key={index}
+                    entering={FadeIn.delay(500 + index * 100)}
+                    className={`h-2 w-16 rounded-full mx-1 ${
+                      index <= verificationStep ? 'bg-emerald-500' : 'bg-white/20'
+                    }`}
+                  />
+                ))}
+              </View>
+
+              {!data.verified ? (
+                <Animated.View entering={FadeInUp.delay(700).springify()}>
+                  <Pressable
+                    onPress={async () => {
+                      await playSoft();
+                      simulateVerification();
+                    }}
+                    disabled={isVerifying}
+                    className={`py-5 rounded-2xl ${isVerifying ? 'bg-white/10' : 'bg-emerald-500 active:opacity-80'}`}
+                  >
+                    <Text className="text-white text-lg font-semibold text-center">
+                      {isVerifying ? 'Verifying...' : 'Verify Step'}
+                    </Text>
+                  </Pressable>
+                </Animated.View>
+              ) : (
+                <Animated.View entering={BounceIn}>
+                  <Pressable
+                    onPress={async () => {
+                      await playSuccess();
+                      await playSuccess();
+                      handleContinue();
+                    }}
+                    className="bg-emerald-500 py-5 rounded-2xl active:opacity-80"
+                  >
+                    <Text className="text-white text-lg font-semibold text-center">
+                      Complete
+                    </Text>
+                  </Pressable>
+                </Animated.View>
+              )}
+            </View>
+          </View>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  // Slide 19: Bucket List Builder - Ultra smooth single card swipe
+  if (currentSlide === 19) {
+    if (currentDestinationIndex >= DESTINATIONS.length) {
+      setCurrentDestinationIndex(0);
+    }
+
+    const currentDestination = DESTINATIONS[currentDestinationIndex];
+    const progress = data.bucketList.length;
+
+    const handleButtonSwipe = (direction: 'left' | 'right') => {
+      if (direction === 'right') {
+        playHeavy();
+      } else {
+        playSoft();
+      }
+      triggerSwipe(direction);
+    };
+
+    return (
+      <View className="flex-1 bg-black">
+        <PremiumBackground />
+        <SafeAreaView className="flex-1" edges={['top', 'bottom']}>
+          <View className="flex-1">
+            {/* Header */}
+            <View className="px-6 pt-6 pb-4">
+              <Text className="text-4xl font-bold text-white mb-2">Build Your Bucket List</Text>
+              <Text className="text-lg text-emerald-400 mb-4">
+                Swipe right to add, left to skip
+              </Text>
+              <View className="flex-row items-center">
+                <View className="flex-1 bg-white/10 h-2 rounded-full overflow-hidden">
+                  <View
+                    className="bg-emerald-500 h-full"
+                    style={{ width: `${(progress / 6) * 100}%` }}
+                  />
+                </View>
+                <Text className="text-white font-semibold ml-3">{progress}/6</Text>
+              </View>
+            </View>
+
+            {/* Single Card - No card behind */}
+            <View className="flex-1 items-center justify-center px-5">
+              {currentDestination && (
+                <GestureDetector gesture={panGesture}>
+                  <Animated.View
+                    style={[
+                      {
+                        width: width - 40,
+                        height: height * 0.55,
+                      },
+                      cardAnimatedStyle,
+                    ]}
+                  >
+                    <View className="flex-1 rounded-3xl overflow-hidden bg-neutral-900">
+                      <Image
+                        source={{ uri: currentDestination.image }}
+                        style={{ width: '100%', height: '100%' }}
+                        resizeMode="cover"
+                      />
+                      <LinearGradient
+                        colors={['transparent', 'rgba(0,0,0,0.9)']}
+                        style={{
+                          position: 'absolute',
+                          bottom: 0,
+                          left: 0,
+                          right: 0,
+                          height: '50%',
+                          justifyContent: 'flex-end',
+                          padding: 24,
+                        }}
+                      >
+                        <Text className="text-5xl mb-2">{currentDestination.emoji}</Text>
+                        <Text className="text-white text-3xl font-bold">
+                          {currentDestination.name}
+                        </Text>
+                      </LinearGradient>
+                    </View>
+                  </Animated.View>
+                </GestureDetector>
+              )}
+            </View>
+
+            {/* Action Buttons */}
+            <View className="px-6 pb-6 flex-row justify-center items-center">
+              <Pressable
+                onPress={() => handleButtonSwipe('left')}
+                className="bg-white/10 p-6 rounded-full mr-8 active:opacity-70"
+              >
+                <X size={32} color="#ef4444" strokeWidth={2.5} />
+              </Pressable>
+
+              <Pressable
+                onPress={() => handleButtonSwipe('right')}
+                className="bg-emerald-500 p-6 rounded-full active:opacity-70"
+              >
+                <Heart size={32} color="#ffffff" strokeWidth={2.5} />
+              </Pressable>
+            </View>
+
+            {/* Continue Button */}
+            {progress >= 6 && (
+              <View className="px-6 pb-2">
+                <Pressable
+                  onPress={async () => {
+                    await playSuccess();
+                    handleContinue();
+                  }}
+                  className="bg-emerald-500 py-5 rounded-2xl active:opacity-80"
+                >
+                  <Text className="text-white text-lg font-semibold text-center">
+                    Complete Profile
+                  </Text>
+                </Pressable>
+              </View>
+            )}
+          </View>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  return null;
+}
