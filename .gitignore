@@ -26,6 +26,8 @@ android/app/build/
 .env
 .env.local
 .env.*.local
+.env.production
+.env.development
 
 # Logs
 npm-debug.*
