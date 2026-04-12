@@ -41,3 +41,5 @@ yarn-error.*
 # Editor
 .vscode/
 .idea/
+node_modules/
+.expo/
