@@ -14,6 +14,10 @@
     "android": {
       "package": "com.vibecode.tagalong"
     },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
     "plugins": [
       "expo-router"
     ],
