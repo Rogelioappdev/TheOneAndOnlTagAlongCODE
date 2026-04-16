@@ -1,5 +1,24 @@
 {
-  "ios": {
-    "bundleIdentifier": "com.anonymous.tagalong-code-62"
+  "expo": {
+    "name": "TagAlong",
+    "slug": "tag-along",
+    "scheme": "tagalong",
+    "version": "17.5",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.vibecode.tagalong"
+    },
+    "android": {
+      "package": "com.vibecode.tagalong"
+    },
+    "plugins": [
+      "expo-router"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
   }
 }
