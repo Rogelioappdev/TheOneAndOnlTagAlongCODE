@@ -351,7 +351,7 @@ function CTASlide({
         {/* Big logo fills top */}
         <Animated.View entering={FadeIn.delay(200).duration(700)} style={s.logoHero}>
           <Image
-            source={require('../../public/tagalong-icon.png')}
+            source={require('../public/tagalong-icon.png')}
             style={s.logoHeroImg}
             resizeMode="contain"
           />

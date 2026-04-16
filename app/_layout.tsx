@@ -21,13 +21,15 @@
   import { Platform } from 'react-native';
 
   // Show notifications as banners even when the app is in the foreground
-  Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowAlert: true,
-      shouldPlaySound: true,
-      shouldSetBadge: true,
-    }),
-  });
+  if (Platform.OS !== 'web') {
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: true,
+      }),
+    });
+  }
 
   // Registers for push notifications and saves the token to Supabase
   async function registerForPushNotifications(userId: string) {
@@ -102,6 +104,8 @@
     const responseListener = useRef<Notifications.EventSubscription | null>(null);
 
     useEffect(() => {
+      if (Platform.OS === 'web') return;
+
       notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
         console.log('[Push] Notification received:', notification.request.content.title);
       });

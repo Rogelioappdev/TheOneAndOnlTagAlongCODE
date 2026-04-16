@@ -29,7 +29,7 @@ interface TagAlongTabButtonProps {
 function TagAlongLogo({ size = 32 }: { size?: number; color?: string }) {
   return (
     <Image
-      source={require('../../public/tagalong-icon.png')}
+      source={require('../public/tagalong-icon.png')}
       style={{ width: size, height: size, tintColor: '#FFFFFF' }}
       resizeMode="contain"
     />
