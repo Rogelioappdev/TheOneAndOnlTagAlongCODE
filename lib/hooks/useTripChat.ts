@@ -315,21 +315,20 @@ import { useEffect } from "react";
           : 'image/jpeg';
         const path = `${chatId}/${user.id}_${Date.now()}.${ext}`;
 
-        // fetch() on file:// URIs fails on native — read via FileSystem instead
-        const base64 = await FileSystem.readAsStringAsync(uri, {
-          encoding: FileSystem.EncodingType.Base64,
+        // Use native file upload — avoids fetch(file://) and atob() issues on device
+        const uploadUrl = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/storage/v1/object/chat-images/${path}`;
+        const uploadResult = await FileSystem.uploadAsync(uploadUrl, uri, {
+          httpMethod: 'POST',
+          uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            'Content-Type': contentType,
+          },
         });
-        const binary = atob(base64);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) {
-          bytes[i] = binary.charCodeAt(i);
+
+        if (uploadResult.status !== 200) {
+          throw new Error(`Upload failed with status ${uploadResult.status}: ${uploadResult.body}`);
         }
-
-        const { error: uploadError } = await supabase.storage
-          .from('chat-images')
-          .upload(path, bytes, { contentType, upsert: false });
-
-        if (uploadError) throw uploadError;
 
         const { data: { publicUrl } } = supabase.storage
           .from('chat-images')
