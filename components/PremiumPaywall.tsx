@@ -718,7 +718,7 @@ function SecondaryPaywall({
                 </Text>
               </Pressable>
               <Text style={{ color: '#6b7280', fontSize: 11 }}>·</Text>
-              <Pressable onPress={() => Linking.openURL('https://sites.google.com/view/tagalong-eula/p%C3%A1gina-principal')}>
+              <Pressable onPress={() => Linking.openURL('https://rogelioappdev.github.io/TheOneAndOnlTagAlongCODE/terms.html')}>
                 <Text style={{ color: '#6b7280', fontSize: 11, textDecorationLine: 'underline' }}>
                   Terms of Use
                 </Text>

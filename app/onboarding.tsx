@@ -825,7 +825,16 @@ export default function OnboardingScreen() {
                 </Pressable>
 
                 <Text style={{ color: 'rgba(255,255,255,0.25)', fontSize: 11, textAlign: 'center', fontFamily: 'Outfit-Regular', lineHeight: 16, marginBottom: 12 }}>
-                  By continuing you agree to our Terms of Service{'\n'}and Privacy Policy
+                  By continuing you agree to our{' '}
+                  <Text
+                    style={{ textDecorationLine: 'underline' }}
+                    onPress={() => Linking.openURL('https://rogelioappdev.github.io/TheOneAndOnlTagAlongCODE/terms.html')}
+                  >Terms of Service</Text>
+                  {'\n'}and{' '}
+                  <Text
+                    style={{ textDecorationLine: 'underline' }}
+                    onPress={() => Linking.openURL('https://sites.google.com/view/privacypolicytag/p%C3%A1gina-principal')}
+                  >Privacy Policy</Text>
                 </Text>
 
                 {/* Email form (demo / dev) */}

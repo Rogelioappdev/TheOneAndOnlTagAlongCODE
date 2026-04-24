@@ -22,6 +22,15 @@
       }
     };
 
+    const openTermsOfService = async () => {
+      const url = 'https://rogelioappdev.github.io/TheOneAndOnlTagAlongCODE/terms.html';
+      try {
+        await Linking.openURL(url);
+      } catch {
+        Alert.alert('Error', 'Could not open the link.');
+      }
+    };
+
     const openContactSupport = async () => {
       const url = 'https://sites.google.com/view/tagalongs/p%C3%A1gina-principal';
       try {
@@ -196,6 +205,29 @@
                   <Shield size={18} color="#ffffff" strokeWidth={2} />
                 </View>
                 <Text style={{ color: '#ffffff', fontSize: 16, flex: 1 }}>Privacy Policy</Text>
+                <ChevronRight size={18} color="#4b5563" strokeWidth={2} />
+              </Pressable>
+
+              <View style={{ height: 1, backgroundColor: '#1f1f1f', marginLeft: 60 }} />
+
+              {/* Terms of Service Row */}
+              <Pressable
+                onPress={openTermsOfService}
+                style={({ pressed }) => ({
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  paddingHorizontal: 16,
+                  paddingVertical: 14,
+                  backgroundColor: pressed ? '#1c1c1c' : 'transparent',
+                })}
+              >
+                <View style={{
+                  width: 32, height: 32, backgroundColor: '#3b82f6',
+                  borderRadius: 8, alignItems: 'center', justifyContent: 'center', marginRight: 12,
+                }}>
+                  <Shield size={18} color="#ffffff" strokeWidth={2} />
+                </View>
+                <Text style={{ color: '#ffffff', fontSize: 16, flex: 1 }}>Terms of Service</Text>
                 <ChevronRight size={18} color="#4b5563" strokeWidth={2} />
               </Pressable>
 
