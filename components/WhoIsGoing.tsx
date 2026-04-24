@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { View, Text, Pressable, Image } from 'react-native';
+import { View, Text, Pressable } from 'react-native';
 import { Users } from 'lucide-react-native';
 import UserPreviewCard from './UserPreviewCard';
+import UserAvatar from './UserAvatar';
 
-const PLACEHOLDER = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200';
 const MAX_SHOWN = 5;
 
 export interface TripPerson {
@@ -16,6 +16,7 @@ export interface TripPerson {
   city?: string;
   bio?: string;
   isHost?: boolean;
+  status?: 'in' | 'maybe';
   gender?: 'male' | 'female' | 'other';
   travelStyles?: string[];
   placesVisited?: string[];
@@ -34,7 +35,7 @@ interface Props {
   borderColor?: string;
 }
 
-export default function WhoIsGoing({ people, accentColor = '#4a9d6e', borderColor = '#252b27' }: Props) {
+export default function WhoIsGoing({ people, accentColor = '#FFFFFF', borderColor = 'rgba(255,255,255,0.15)' }: Props) {
   const [selectedPerson, setSelectedPerson] = useState<TripPerson | null>(null);
 
   if (!people || people.length === 0) return null;
@@ -45,7 +46,7 @@ export default function WhoIsGoing({ people, accentColor = '#4a9d6e', borderColo
   return (
     <>
       <View
-        style={{ backgroundColor: 'rgba(26,31,28,0.6)' }}
+        style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}
         className="rounded-2xl p-3 mb-4"
       >
         <View className="flex-row items-center justify-between">
@@ -53,26 +54,19 @@ export default function WhoIsGoing({ people, accentColor = '#4a9d6e', borderColo
           <View className="flex-row items-center">
             <View className="flex-row">
               {shown.map((person, i) => {
-                const uri = person.image || (person.photos?.[0]) || PLACEHOLDER;
+                const uri = person.image || person.photos?.[0] || null;
                 return (
                   <Pressable
                     key={person.userId ?? String(i)}
                     onPress={() => setSelectedPerson(person)}
                     hitSlop={6}
-                    style={{
-                      marginLeft: i > 0 ? -12 : 0,
-                      zIndex: MAX_SHOWN - i,
-                    }}
+                    style={{ marginLeft: i > 0 ? -12 : 0, zIndex: MAX_SHOWN - i }}
                   >
-                    <Image
-                      source={{ uri }}
-                      style={{
-                        width: 36,
-                        height: 36,
-                        borderRadius: 18,
-                        borderWidth: 2,
-                        borderColor,
-                      }}
+                    <UserAvatar
+                      uri={uri}
+                      name={person.name}
+                      size={36}
+                      style={{ borderWidth: 2, borderColor }}
                     />
                   </Pressable>
                 );
@@ -87,7 +81,7 @@ export default function WhoIsGoing({ people, accentColor = '#4a9d6e', borderColo
                     borderWidth: 2,
                     borderColor,
                     marginLeft: -12,
-                    backgroundColor: '#333a35',
+                    backgroundColor: 'rgba(255,255,255,0.12)',
                     justifyContent: 'center',
                     alignItems: 'center',
                     zIndex: 0,
@@ -110,7 +104,7 @@ export default function WhoIsGoing({ people, accentColor = '#4a9d6e', borderColo
             </View>
           </View>
 
-          <View style={{ backgroundColor: 'rgba(45,90,69,0.3)' }} className="flex-row items-center px-2 py-1.5 rounded-full">
+          <View style={{ backgroundColor: 'rgba(255,255,255,0.09)', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 6, borderRadius: 999 }}>
             <Users size={12} color={accentColor} strokeWidth={2} />
           </View>
         </View>

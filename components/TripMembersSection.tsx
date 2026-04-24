@@ -1,13 +1,12 @@
 import { useState } from 'react';
-import { View, Text, Pressable, Image } from 'react-native';
+import { View, Text, Pressable } from 'react-native';
 import { ChevronRight, MapPin, Crown } from 'lucide-react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, FadeIn, FadeInRight } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import type { TripPerson } from './WhoIsGoing';
 import UserProfileModal from './userprofilemodal';
-
-const PLACEHOLDER = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400';
-const ACCENT = '#4a9d6e';
+import UserAvatar from './UserAvatar';
+const ACCENT = '#FFFFFF';
 
 const STYLE_EMOJI: Record<string, string> = {
   luxury: '✨', backpacking: '🎒', relaxed: '🏖️', cultural: '🏛️',
@@ -44,7 +43,7 @@ function MemberRow({ person, index }: { person: TripPerson; index: number }) {
     setShowProfile(true);
   };
 
-  const photoUri = person.image || person.photos?.[0] || PLACEHOLDER;
+  const photoUri = person.image || person.photos?.[0] || null;
   const location = [person.city, person.country].filter(Boolean).join(', ') || null;
   const travelStyles = (person.travelStyles ?? []).slice(0, 2);
 
@@ -67,20 +66,19 @@ function MemberRow({ person, index }: { person: TripPerson; index: number }) {
           >
             {/* Photo */}
             <View style={{ position: 'relative' }}>
-              <Image
-                source={{ uri: photoUri }}
-                style={{
-                  width: 58, height: 58, borderRadius: 16,
-                  borderWidth: 2, borderColor: 'rgba(74,157,110,0.4)',
-                }}
-                resizeMode="cover"
+              <UserAvatar
+                uri={photoUri}
+                name={person.name}
+                size={58}
+                borderRadius={16}
+                style={{ borderWidth: 2, borderColor: 'rgba(255,255,255,0.25)' }}
               />
               {person.isHost && (
                 <View style={{
                   position: 'absolute', bottom: -4, right: -4,
-                  backgroundColor: ACCENT, borderRadius: 10,
+                  backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 10,
                   width: 20, height: 20, alignItems: 'center', justifyContent: 'center',
-                  borderWidth: 2, borderColor: '#1a1f1c',
+                  borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)',
                 }}>
                   <Crown size={10} color="#fff" strokeWidth={2.5} />
                 </View>
@@ -98,7 +96,7 @@ function MemberRow({ person, index }: { person: TripPerson; index: number }) {
                 ) : null}
                 {person.isHost && (
                   <View style={{
-                    marginLeft: 8, backgroundColor: 'rgba(74,157,110,0.2)',
+                    marginLeft: 8, backgroundColor: 'rgba(255,255,255,0.12)',
                     borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2,
                   }}>
                     <Text style={{ color: ACCENT, fontSize: 11, fontWeight: '700' }}>Host</Text>
@@ -117,7 +115,7 @@ function MemberRow({ person, index }: { person: TripPerson; index: number }) {
                 <View style={{ flexDirection: 'row', gap: 5 }}>
                   {travelStyles.map(s => (
                     <View key={s} style={{
-                      backgroundColor: 'rgba(74,157,110,0.15)',
+                      backgroundColor: 'rgba(255,255,255,0.09)',
                       borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2,
                     }}>
                       <Text style={{ color: ACCENT, fontSize: 11, fontWeight: '600' }}>
@@ -135,16 +133,16 @@ function MemberRow({ person, index }: { person: TripPerson; index: number }) {
               hitSlop={12}
               style={{
                 width: 36, height: 36, borderRadius: 12,
-                backgroundColor: ACCENT,
+                backgroundColor: '#FFFFFF',
                 alignItems: 'center', justifyContent: 'center',
-                shadowColor: ACCENT,
+                shadowColor: 'rgba(255,255,255,0.3)',
                 shadowOffset: { width: 0, height: 3 },
                 shadowOpacity: 0.45,
                 shadowRadius: 6,
                 elevation: 4,
               }}
             >
-              <ChevronRight size={18} color="#fff" strokeWidth={3} />
+              <ChevronRight size={18} color="#000" strokeWidth={3} />
             </Pressable>
           </Pressable>
         </Animated.View>
@@ -159,6 +157,26 @@ function MemberRow({ person, index }: { person: TripPerson; index: number }) {
   );
 }
 
+// ─── Section Header ───────────────────────────────────────────────────────────
+
+function SectionHeader({ label, count }: { label: string; count: number }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10, marginTop: 4 }}>
+      <Text style={{ color: '#f5f5f0', fontSize: 14, fontWeight: '700', flex: 1, letterSpacing: 0.3 }}>
+        {label}
+      </Text>
+      <View style={{
+        backgroundColor: 'rgba(255,255,255,0.09)',
+        borderRadius: 10, paddingHorizontal: 9, paddingVertical: 3,
+      }}>
+        <Text style={{ color: ACCENT, fontSize: 12, fontWeight: '700' }}>
+          {count}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 interface Props {
@@ -169,18 +187,21 @@ interface Props {
 export default function TripMembersSection({ people }: Props) {
   if (!people || people.length === 0) return null;
 
-  // Sort: host first, then rest
-  const sorted = [...people].sort((a, b) => (b.isHost ? 1 : 0) - (a.isHost ? 1 : 0));
+  const going = [...people]
+    .filter(p => p.status !== 'maybe')
+    .sort((a, b) => (b.isHost ? 1 : 0) - (a.isHost ? 1 : 0));
+
+  const maybe = people.filter(p => p.status === 'maybe');
 
   return (
     <Animated.View entering={FadeIn.delay(100)} style={{ marginBottom: 24 }}>
-      {/* Header */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
+      {/* Top-level header */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
         <Text style={{ color: '#f5f5f0', fontSize: 18, fontWeight: '700', flex: 1 }}>
           Who's Going
         </Text>
         <View style={{
-          backgroundColor: 'rgba(74,157,110,0.18)',
+          backgroundColor: 'rgba(255,255,255,0.09)',
           borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4,
         }}>
           <Text style={{ color: ACCENT, fontSize: 13, fontWeight: '700' }}>
@@ -189,10 +210,42 @@ export default function TripMembersSection({ people }: Props) {
         </View>
       </View>
 
-      {/* Member rows */}
-      {sorted.map((person, i) => (
-        <MemberRow key={person.userId ?? String(i)} person={person} index={i} />
-      ))}
+      {/* Going */}
+      {going.length > 0 && (
+        <>
+          <SectionHeader label="Going" count={going.length} />
+          {going.map((person, i) => (
+            <MemberRow key={person.userId ?? String(i)} person={person} index={i} />
+          ))}
+        </>
+      )}
+
+      {/* Maybe — only shown when someone has maybe status */}
+      {maybe.length > 0 && (
+        <>
+          <View style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            marginTop: going.length > 0 ? 8 : 0,
+            marginBottom: 10,
+          }}>
+            <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.07)' }} />
+            <View style={{
+              backgroundColor: 'rgba(255,255,255,0.07)',
+              borderRadius: 10, paddingHorizontal: 10, paddingVertical: 3,
+              marginHorizontal: 10,
+            }}>
+              <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11, fontWeight: '700', letterSpacing: 0.4 }}>
+                MAYBE · {maybe.length}
+              </Text>
+            </View>
+            <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.07)' }} />
+          </View>
+          {maybe.map((person, i) => (
+            <MemberRow key={person.userId ?? String(i)} person={person} index={going.length + i} />
+          ))}
+        </>
+      )}
     </Animated.View>
   );
 }

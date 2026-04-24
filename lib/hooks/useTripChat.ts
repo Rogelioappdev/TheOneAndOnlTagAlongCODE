@@ -183,6 +183,47 @@ import { useEffect } from "react";
     });
   }
 
+  // Edit an existing trip message
+  export function useEditTripMessage() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+      mutationFn: async ({
+        chatId,
+        messageId,
+        content,
+      }: {
+        chatId: string;
+        messageId: string;
+        content: string;
+      }) => {
+        const { data, error } = await supabase
+          .from("trip_messages")
+          .update({ content, edited_at: new Date().toISOString() })
+          .eq("id", messageId)
+          .select(MESSAGE_SELECT)
+          .single();
+
+        if (error) throw error;
+        return data as TripMessageWithSender;
+      },
+      onSuccess: (data, variables) => {
+        queryClient.setQueryData<InfiniteData<TripMessageWithSender[]>>(
+          tripChatKeys.messages(variables.chatId),
+          (old) => {
+            if (!old) return old;
+            return {
+              ...old,
+              pages: old.pages.map((page) =>
+                page.map((msg) => (msg.id === variables.messageId ? data : msg))
+              ),
+            };
+          }
+        );
+      },
+    });
+  }
+
   // Mark trip chat as read
   export function useMarkTripChatRead() {
     return useMutation({

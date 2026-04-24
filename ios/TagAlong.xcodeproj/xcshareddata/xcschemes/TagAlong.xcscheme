@@ -15,9 +15,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "13B07F861A680F5B00A75B9A"
-               BuildableName = "TagAlongCode62.app"
-               BlueprintName = "TagAlongCode62"
-               ReferencedContainer = "container:TagAlongCode62.xcodeproj">
+               BuildableName = "TagAlong.app"
+               BlueprintName = "TagAlong"
+               ReferencedContainer = "container:TagAlong.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -33,9 +33,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "00E356ED1AD99517003FC87E"
-               BuildableName = "TagAlongCode62Tests.xctest"
-               BlueprintName = "TagAlongCode62Tests"
-               ReferencedContainer = "container:TagAlongCode62.xcodeproj">
+               BuildableName = "TagAlongTests.xctest"
+               BlueprintName = "TagAlongTests"
+               ReferencedContainer = "container:TagAlong.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
@@ -55,9 +55,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "13B07F861A680F5B00A75B9A"
-            BuildableName = "TagAlongCode62.app"
-            BlueprintName = "TagAlongCode62"
-            ReferencedContainer = "container:TagAlongCode62.xcodeproj">
+            BuildableName = "TagAlong.app"
+            BlueprintName = "TagAlong"
+            ReferencedContainer = "container:TagAlong.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -72,9 +72,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "13B07F861A680F5B00A75B9A"
-            BuildableName = "TagAlongCode62.app"
-            BlueprintName = "TagAlongCode62"
-            ReferencedContainer = "container:TagAlongCode62.xcodeproj">
+            BuildableName = "TagAlong.app"
+            BlueprintName = "TagAlong"
+            ReferencedContainer = "container:TagAlong.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

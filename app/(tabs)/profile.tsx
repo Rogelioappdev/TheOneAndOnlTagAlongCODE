@@ -2,7 +2,7 @@
   import { Text, View, Pressable, ScrollView, Image, Modal, TextInput, Dimensions, Alert, NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
   import { Image as ExpoImage } from 'expo-image';
   import { useQuery } from '@tanstack/react-query';
-  import { SafeAreaView } from 'react-native-safe-area-context';
+  import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
   import { LinearGradient } from 'expo-linear-gradient';
   import {
     LogOut,
@@ -34,7 +34,11 @@
   import AsyncStorage from '@react-native-async-storage/async-storage';
   import * as Haptics from 'expo-haptics';
   import * as ImagePicker from 'expo-image-picker';
-  import Animated, { FadeIn, FadeInDown, FadeOut, SlideInRight, Layout } from 'react-native-reanimated';
+  import Animated, {
+    FadeIn, FadeInDown, FadeInUp, FadeOut, SlideInRight, Layout,
+    useSharedValue, useAnimatedStyle, withTiming, withRepeat, withSequence,
+    withDelay, interpolate, Easing, withSpring,
+  } from 'react-native-reanimated';
   import useUserProfileStore, { UserProfile } from '@/lib/state/user-profile-store';
   import useMatchesStore from '@/lib/state/matches-store';
   import useMessagesStore from '@/lib/state/messages-store';
@@ -196,6 +200,7 @@
     const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
     const [isAddingTravelPhoto, setIsAddingTravelPhoto] = useState(false);
     const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+    const insets = useSafeAreaInsets();
     const [showPhotoPreview, setShowPhotoPreview] = useState(false);
     const [previewPhotoIndex, setPreviewPhotoIndex] = useState(0);
     const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
@@ -728,6 +733,163 @@
 
           <View style={{ padding: 20, gap: 22 }}>
 
+            {/* ── Complete Your Travel DNA — mini-onboarding ──────────── */}
+            {(() => {
+              const PROFILE_FIELDS = [
+                { key: 'bio', label: 'Bio', section: 'bio' as const, icon: '✏️', desc: 'Tell your travel story' },
+                { key: 'travelStyles', label: 'Travel Style', section: 'styles' as const, isArray: true, icon: '🎒', desc: 'How do you travel?' },
+                { key: 'travelPace', label: 'Travel Pace', section: 'pace' as const, icon: '⚡', desc: 'Slow & steady or go go go?' },
+                { key: 'socialEnergy', label: 'Social Energy', section: 'personality' as const, icon: '🌗', desc: 'Introvert, extrovert, or ambivert?' },
+                { key: 'planningStyle', label: 'Planning Style', section: 'planning' as const, icon: '📋', desc: 'Planner or spontaneous?' },
+                { key: 'experience', label: 'Experience', section: 'experience' as const, icon: '🌍', desc: 'How many countries?' },
+                { key: 'languages', label: 'Languages', section: 'languages' as const, isArray: true, icon: '🗣️', desc: 'What do you speak?' },
+                { key: 'placesVisited', label: 'Places Visited', section: 'places' as const, isArray: true, icon: '📍', desc: 'Where have you been?' },
+                { key: 'gender', label: 'Gender', section: 'basics' as const, icon: '👤', desc: 'How do you identify?' },
+                { key: 'travelWith', label: 'Travel Partner', section: 'basics' as const, icon: '🤝', desc: 'Who do you travel with?' },
+              ] as const;
+              const filled = PROFILE_FIELDS.filter(f => {
+                const val = (profile as any)[f.key];
+                if (!val) return false;
+                if ('isArray' in f && f.isArray) return Array.isArray(val) && val.length > 0;
+                return true;
+              });
+              const pct = Math.round((filled.length / PROFILE_FIELDS.length) * 100);
+              if (pct >= 100) return null;
+              const missing = PROFILE_FIELDS.filter(f => {
+                const val = (profile as any)[f.key];
+                if (!val) return true;
+                if ('isArray' in f && f.isArray) return !Array.isArray(val) || val.length === 0;
+                return false;
+              });
+              const nextField = missing[0];
+              return (
+                <View style={{
+                  backgroundColor: '#000',
+                  borderRadius: 24,
+                  overflow: 'hidden',
+                  borderWidth: 1,
+                  borderColor: 'rgba(240,235,227,0.1)',
+                }}>
+                  {/* Header with progress */}
+                  <View style={{ padding: 20, paddingBottom: 16 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+                      <View style={{
+                        width: 44, height: 44, borderRadius: 22,
+                        backgroundColor: 'rgba(240,235,227,0.09)',
+                        borderWidth: 1.5,
+                        borderColor: 'rgba(240,235,227,0.22)',
+                        alignItems: 'center', justifyContent: 'center',
+                      }}>
+                        <Text style={{ fontSize: 20 }}>✈️</Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: '#fff', fontSize: 17, fontWeight: '800', fontFamily: 'Outfit-ExtraBold', letterSpacing: -0.3 }}>
+                          Complete your Travel DNA
+                        </Text>
+                        <Text style={{ color: 'rgba(255,255,255,0.42)', fontSize: 12, fontFamily: 'Outfit-Regular', marginTop: 2 }}>
+                          Better matches with a complete profile
+                        </Text>
+                      </View>
+                      <View style={{
+                        backgroundColor: 'rgba(240,235,227,0.1)',
+                        borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4,
+                        borderWidth: 1, borderColor: 'rgba(240,235,227,0.18)',
+                      }}>
+                        <Text style={{ color: '#F0EBE3', fontSize: 12, fontWeight: '700', fontFamily: 'Outfit-Bold' }}>
+                          {pct}%
+                        </Text>
+                      </View>
+                    </View>
+                    {/* Progress bar */}
+                    <View style={{ height: 4, backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 999 }}>
+                      <View style={{ height: 4, backgroundColor: '#F0EBE3', borderRadius: 999, width: `${pct}%` as any }} />
+                    </View>
+                  </View>
+
+                  {/* Next step highlight — feels like onboarding */}
+                  {nextField && (
+                    <Pressable
+                      onPress={() => openEditSection(nextField.section as any)}
+                      style={{
+                        marginHorizontal: 14,
+                        marginBottom: 10,
+                        backgroundColor: 'rgba(240,235,227,0.06)',
+                        borderRadius: 18,
+                        padding: 16,
+                        borderWidth: 1,
+                        borderColor: 'rgba(240,235,227,0.15)',
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 14,
+                      }}
+                    >
+                      <View style={{
+                        width: 46, height: 46, borderRadius: 23,
+                        backgroundColor: 'rgba(240,235,227,0.1)',
+                        borderWidth: 1,
+                        borderColor: 'rgba(240,235,227,0.2)',
+                        alignItems: 'center', justifyContent: 'center',
+                      }}>
+                        <Text style={{ fontSize: 20 }}>{nextField.icon}</Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: '#fff', fontSize: 14, fontWeight: '700', fontFamily: 'Outfit-Bold', marginBottom: 2 }}>
+                          Add {nextField.label}
+                        </Text>
+                        <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, fontFamily: 'Outfit-Regular' }}>
+                          {nextField.desc}
+                        </Text>
+                      </View>
+                      <View style={{
+                        backgroundColor: '#F0EBE3',
+                        borderRadius: 999,
+                        paddingHorizontal: 14,
+                        paddingVertical: 8,
+                      }}>
+                        <Text style={{ color: '#000', fontSize: 12, fontWeight: '700', fontFamily: 'Outfit-Bold' }}>Add</Text>
+                      </View>
+                    </Pressable>
+                  )}
+
+                  {/* Remaining fields as small tappable rows */}
+                  {missing.length > 1 && (
+                    <View style={{ paddingHorizontal: 14, paddingBottom: 16 }}>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                        {missing.slice(1, 5).map(f => (
+                          <Pressable
+                            key={f.key}
+                            onPress={() => openEditSection(f.section as any)}
+                            style={{
+                              backgroundColor: 'rgba(255,255,255,0.04)',
+                              borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7,
+                              borderWidth: 1, borderColor: 'rgba(240,235,227,0.1)',
+                              flexDirection: 'row', alignItems: 'center', gap: 6,
+                            }}
+                          >
+                            <Text style={{ fontSize: 13 }}>{f.icon}</Text>
+                            <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, fontFamily: 'Outfit-SemiBold' }}>
+                              {f.label}
+                            </Text>
+                          </Pressable>
+                        ))}
+                        {missing.length > 5 && (
+                          <View style={{
+                            backgroundColor: 'rgba(255,255,255,0.04)',
+                            borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7,
+                            borderWidth: 1, borderColor: 'rgba(240,235,227,0.08)',
+                          }}>
+                            <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, fontFamily: 'Outfit-Regular' }}>
+                              +{missing.length - 5} more
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  )}
+                </View>
+              );
+            })()}
+
             {/* Bio — tap to edit */}
             <Pressable onPress={() => openEditSection('bio')}>
               {profile.bio ? (
@@ -1012,37 +1174,49 @@
         })()}
 
         {/* Logout Confirmation Modal */}
-        <Modal visible={showLogoutConfirm} transparent animationType="slide" onRequestClose={() => setShowLogoutConfirm(false)}>
-          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'flex-end' }}>
-            <SafeAreaView edges={['bottom']} style={{ paddingHorizontal: 16, paddingTop: 16 }}>
-              {/* Card */}
-              <View style={{ backgroundColor: '#1c1c1e', borderRadius: 22, overflow: 'hidden', marginBottom: 12 }}>
-                {/* Header */}
-                <View style={{ paddingVertical: 20, paddingHorizontal: 20, alignItems: 'center', borderBottomWidth: 0.5, borderBottomColor: 'rgba(255,255,255,0.12)' }}>
-                  <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(239,68,68,0.15)', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
-                    <LogOut size={20} color="#ef4444" strokeWidth={2} />
-                  </View>
-                  <Text style={{ color: '#fff', fontSize: 18, fontFamily: 'Outfit-Bold', marginBottom: 6 }}>Log Out</Text>
-                  <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 14, fontFamily: 'Outfit-Regular', textAlign: 'center', lineHeight: 20 }}>
-                    Are you sure you want to log out of your account?
-                  </Text>
-                </View>
-                {/* Log Out button */}
-                <Pressable
-                  onPress={confirmLogout}
-                  style={({ pressed }) => ({ paddingVertical: 20, alignItems: 'center', backgroundColor: pressed ? '#c0392b' : '#e53935' })}
-                >
-                  <Text style={{ color: '#fff', fontSize: 17, fontFamily: 'Outfit-Bold', letterSpacing: 0.2 }}>Log Out</Text>
-                </Pressable>
+        <Modal visible={showLogoutConfirm} transparent animationType="fade" onRequestClose={() => setShowLogoutConfirm(false)}>
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.82)', justifyContent: 'center', paddingHorizontal: 32 }}>
+            <View style={{ backgroundColor: '#111', borderRadius: 24, paddingHorizontal: 28, paddingTop: 40, paddingBottom: 32, alignItems: 'center', borderWidth: 0.5, borderColor: 'rgba(255,255,255,0.08)' }}>
+
+              {/* Icon */}
+              <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: 'rgba(239,68,68,0.14)', alignItems: 'center', justifyContent: 'center', marginBottom: 24 }}>
+                <LogOut size={34} color="#ef4444" strokeWidth={1.8} />
               </View>
-              {/* Cancel button — separate, clearly visible */}
+
+              {/* Title */}
+              <Text style={{ color: '#fff', fontSize: 22, fontFamily: 'Outfit-Bold', marginBottom: 10 }}>
+                Log Out
+              </Text>
+
+              {/* Subtitle */}
+              <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 15, fontFamily: 'Outfit-Regular', textAlign: 'center', lineHeight: 23, marginBottom: 32 }}>
+                Are you sure you want to log out of your account?
+              </Text>
+
+              {/* Yes, Log Out — full width red */}
               <Pressable
-                onPress={() => setShowLogoutConfirm(false)}
-                style={({ pressed }) => ({ backgroundColor: pressed ? '#2c2c2e' : '#3a3a3c', borderRadius: 18, paddingVertical: 18, alignItems: 'center', marginBottom: 8 })}
+                onPress={confirmLogout}
+                style={({ pressed }) => ({
+                  width: '100%',
+                  backgroundColor: pressed ? '#c0392b' : '#e53935',
+                  borderRadius: 14,
+                  paddingVertical: 18,
+                  alignItems: 'center',
+                  marginBottom: 24,
+                })}
               >
-                <Text style={{ color: '#fff', fontSize: 17, fontFamily: 'Outfit-SemiBold' }}>Cancel</Text>
+                <Text style={{ color: '#fff', fontSize: 17, fontFamily: 'Outfit-Bold', letterSpacing: 0.2 }}>Yes, Log Out</Text>
               </Pressable>
-            </SafeAreaView>
+
+              {/* Divider */}
+              <View style={{ width: '100%', height: 0.5, backgroundColor: 'rgba(255,255,255,0.1)', marginBottom: 24 }} />
+
+              {/* Cancel — plain text, clearly distinct */}
+              <Pressable onPress={() => setShowLogoutConfirm(false)} hitSlop={16}>
+                <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 16, fontFamily: 'Outfit-SemiBold' }}>Cancel</Text>
+              </Pressable>
+
+            </View>
           </View>
         </Modal>
 
@@ -1054,26 +1228,25 @@
           presentationStyle="pageSheet"
           onRequestClose={() => setEditSection(null)}
         >
-          <View className="flex-1 bg-black">
-            <SafeAreaView className="flex-1" edges={['top']}>
-              <View className="flex-row items-center justify-between px-4 py-4 border-b border-white/10">
-                <Pressable onPress={() => setEditSection(null)}>
-                  <X size={24} color="#fff" strokeWidth={2} />
+          <View style={{ flex: 1, backgroundColor: '#000' }}>
+            <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 0.5, borderBottomColor: 'rgba(255,255,255,0.1)' }}>
+                <Pressable onPress={() => setEditSection(null)} style={{ width: 44, alignItems: 'flex-start', justifyContent: 'center' }}>
+                  <X size={22} color="#fff" strokeWidth={2.5} />
                 </Pressable>
-                <Text className="text-white text-lg font-semibold">Edit Bio</Text>
-                <Pressable onPress={saveBio}>
-                  <Check size={24} color="#fff" strokeWidth={2} />
+                <Text style={{ color: '#fff', fontSize: 17, fontWeight: '700', fontFamily: 'Outfit-Bold' }}>Edit Bio</Text>
+                <Pressable onPress={saveBio} style={{ width: 44, alignItems: 'flex-end', justifyContent: 'center' }}>
+                  <Check size={22} color="#fff" strokeWidth={2.5} />
                 </Pressable>
               </View>
-              <View className="flex-1 p-4">
+              <View style={{ flex: 1, padding: 20 }}>
                 <TextInput
                   value={tempBio}
                   onChangeText={setTempBio}
                   placeholder="Tell others about yourself, your travel experiences, and what you're looking for..."
-                  placeholderTextColor="#6b7280"
+                  placeholderTextColor="rgba(255,255,255,0.3)"
                   multiline
-                  className="text-white text-base leading-6"
-                  style={{ minHeight: 200 }}
+                  style={{ color: '#fff', fontSize: 16, lineHeight: 24, minHeight: 200, fontFamily: 'Outfit-Regular' }}
                   autoFocus
                 />
               </View>
@@ -1088,33 +1261,34 @@
           presentationStyle="pageSheet"
           onRequestClose={() => setEditSection(null)}
         >
-          <View className="flex-1 bg-black">
-            <SafeAreaView className="flex-1" edges={['top']}>
-              <View className="flex-row items-center justify-between px-4 py-4 border-b border-white/10">
-                <Pressable onPress={() => setEditSection(null)}>
-                  <X size={24} color="#fff" strokeWidth={2} />
+          <View style={{ flex: 1, backgroundColor: '#000' }}>
+            <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 0.5, borderBottomColor: 'rgba(255,255,255,0.1)' }}>
+                <Pressable onPress={() => setEditSection(null)} style={{ width: 44, alignItems: 'flex-start', justifyContent: 'center' }}>
+                  <X size={22} color="#fff" strokeWidth={2.5} />
                 </Pressable>
-                <Text className="text-white text-lg font-semibold">Travel Styles</Text>
-                <Pressable onPress={saveStyles}>
-                  <Check size={24} color="#fff" strokeWidth={2} />
+                <Text style={{ color: '#fff', fontSize: 17, fontWeight: '700', fontFamily: 'Outfit-Bold' }}>Travel Styles</Text>
+                <Pressable onPress={saveStyles} style={{ width: 44, alignItems: 'flex-end', justifyContent: 'center' }}>
+                  <Check size={22} color="#fff" strokeWidth={2.5} />
                 </Pressable>
               </View>
-              <ScrollView className="flex-1 p-4">
-                <Text className="text-gray-400 mb-4">Select all that apply to your travel style</Text>
-                <View className="flex-row flex-wrap">
-                  {TRAVEL_STYLES.map((style) => (
-                    <Pressable
-                      key={style.id}
-                      onPress={() => toggleStyle(style.id)}
-                      className={`px-4 py-3 rounded-2xl mr-3 mb-3 ${
-                        tempStyles.includes(style.id) ? 'bg-white' : 'bg-neutral-900/80'
-                      }`}
-                    >
-                      <Text className={`text-lg ${tempStyles.includes(style.id) ? 'text-black' : 'text-gray-300'}`}>
-                        {style.icon} {style.label}
-                      </Text>
-                    </Pressable>
-                  ))}
+              <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20 }}>
+                <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 14, marginBottom: 20, fontFamily: 'Outfit-Regular' }}>Select all that apply to your travel style</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                  {TRAVEL_STYLES.map((style) => {
+                    const selected = tempStyles.includes(style.id);
+                    return (
+                      <Pressable
+                        key={style.id}
+                        onPress={() => toggleStyle(style.id)}
+                        style={{ paddingHorizontal: 16, paddingVertical: 12, borderRadius: 22, marginRight: 10, marginBottom: 10, backgroundColor: selected ? '#fff' : '#1C1C1E' }}
+                      >
+                        <Text style={{ fontSize: 16, color: selected ? '#000' : 'rgba(255,255,255,0.8)', fontFamily: 'Outfit-SemiBold' }}>
+                          {style.icon} {style.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
                 </View>
               </ScrollView>
             </SafeAreaView>
@@ -1128,38 +1302,33 @@
           presentationStyle="pageSheet"
           onRequestClose={() => setEditSection(null)}
         >
-          <View className="flex-1 bg-black">
-            <SafeAreaView className="flex-1" edges={['top']}>
-              <View className="flex-row items-center justify-between px-4 py-4 border-b border-white/10">
-                <Pressable onPress={() => setEditSection(null)}>
-                  <X size={24} color="#fff" strokeWidth={2} />
+          <View style={{ flex: 1, backgroundColor: '#000' }}>
+            <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 0.5, borderBottomColor: 'rgba(255,255,255,0.1)' }}>
+                <Pressable onPress={() => setEditSection(null)} style={{ width: 44, alignItems: 'flex-start', justifyContent: 'center' }}>
+                  <X size={22} color="#fff" strokeWidth={2.5} />
                 </Pressable>
-                <Text className="text-white text-lg font-semibold">Daily Pace</Text>
-                <View style={{ width: 24 }} />
+                <Text style={{ color: '#fff', fontSize: 17, fontWeight: '700', fontFamily: 'Outfit-Bold' }}>Daily Pace</Text>
+                <View style={{ width: 44 }} />
               </View>
-              <ScrollView className="flex-1 p-4">
-                <Text className="text-gray-400 mb-4">How do you like to pace your travels?</Text>
-                {PACE_OPTIONS.map((option) => (
-                  <Pressable
-                    key={option.id}
-                    onPress={() => selectPace(option.id as UserProfile['travelPace'])}
-                    className={`p-4 rounded-2xl mb-3 ${
-                      profile.travelPace === option.id ? 'bg-white' : 'bg-neutral-900'
-                    }`}
-                  >
-                    <View className="flex-row items-center">
-                      <Text className="text-2xl mr-3">{option.emoji}</Text>
-                      <View>
-                        <Text className={`text-lg font-semibold ${profile.travelPace === option.id ? 'text-black' : 'text-white'}`}>
-                          {option.label}
-                        </Text>
-                        <Text className={`text-sm ${profile.travelPace === option.id ? 'text-black/60' : 'text-gray-500'}`}>
-                          {option.desc}
-                        </Text>
+              <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20 }}>
+                <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 14, marginBottom: 20, fontFamily: 'Outfit-Regular' }}>How do you like to pace your travels?</Text>
+                {PACE_OPTIONS.map((option) => {
+                  const selected = profile.travelPace === option.id;
+                  return (
+                    <Pressable
+                      key={option.id}
+                      onPress={() => selectPace(option.id as UserProfile['travelPace'])}
+                      style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: selected ? '#fff' : '#1C1C1E', borderRadius: 16, padding: 16, marginBottom: 10 }}
+                    >
+                      <Text style={{ fontSize: 26, marginRight: 14 }}>{option.emoji}</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: selected ? '#000' : '#fff', fontSize: 17, fontWeight: '600', fontFamily: 'Outfit-SemiBold' }}>{option.label}</Text>
+                        <Text style={{ color: selected ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.45)', fontSize: 13, marginTop: 2, fontFamily: 'Outfit-Regular' }}>{option.desc}</Text>
                       </View>
-                    </View>
-                  </Pressable>
-                ))}
+                    </Pressable>
+                  );
+                })}
               </ScrollView>
             </SafeAreaView>
           </View>
@@ -1172,38 +1341,33 @@
           presentationStyle="pageSheet"
           onRequestClose={() => setEditSection(null)}
         >
-          <View className="flex-1 bg-black">
-            <SafeAreaView className="flex-1" edges={['top']}>
-              <View className="flex-row items-center justify-between px-4 py-4 border-b border-white/10">
-                <Pressable onPress={() => setEditSection(null)}>
-                  <X size={24} color="#fff" strokeWidth={2} />
+          <View style={{ flex: 1, backgroundColor: '#000' }}>
+            <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 0.5, borderBottomColor: 'rgba(255,255,255,0.1)' }}>
+                <Pressable onPress={() => setEditSection(null)} style={{ width: 44, alignItems: 'flex-start', justifyContent: 'center' }}>
+                  <X size={22} color="#fff" strokeWidth={2.5} />
                 </Pressable>
-                <Text className="text-white text-lg font-semibold">Group Preference</Text>
-                <View style={{ width: 24 }} />
+                <Text style={{ color: '#fff', fontSize: 17, fontWeight: '700', fontFamily: 'Outfit-Bold' }}>Group Preference</Text>
+                <View style={{ width: 44 }} />
               </View>
-              <ScrollView className="flex-1 p-4">
-                <Text className="text-gray-400 mb-4">What size groups do you prefer?</Text>
-                {GROUP_OPTIONS.map((option) => (
-                  <Pressable
-                    key={option.id}
-                    onPress={() => selectGroup(option.id as UserProfile['groupType'])}
-                    className={`p-4 rounded-2xl mb-3 ${
-                      profile.groupType === option.id ? 'bg-white' : 'bg-neutral-900'
-                    }`}
-                  >
-                    <View className="flex-row items-center">
-                      <Text className="text-2xl mr-3">{option.emoji}</Text>
-                      <View>
-                        <Text className={`text-lg font-semibold ${profile.groupType === option.id ? 'text-black' : 'text-white'}`}>
-                          {option.label}
-                        </Text>
-                        <Text className={`text-sm ${profile.groupType === option.id ? 'text-black/60' : 'text-gray-500'}`}>
-                          {option.desc}
-                        </Text>
+              <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20 }}>
+                <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 14, marginBottom: 20, fontFamily: 'Outfit-Regular' }}>What size groups do you prefer?</Text>
+                {GROUP_OPTIONS.map((option) => {
+                  const selected = profile.groupType === option.id;
+                  return (
+                    <Pressable
+                      key={option.id}
+                      onPress={() => selectGroup(option.id as UserProfile['groupType'])}
+                      style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: selected ? '#fff' : '#1C1C1E', borderRadius: 16, padding: 16, marginBottom: 10 }}
+                    >
+                      <Text style={{ fontSize: 26, marginRight: 14 }}>{option.emoji}</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: selected ? '#000' : '#fff', fontSize: 17, fontWeight: '600', fontFamily: 'Outfit-SemiBold' }}>{option.label}</Text>
+                        <Text style={{ color: selected ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.45)', fontSize: 13, marginTop: 2, fontFamily: 'Outfit-Regular' }}>{option.desc}</Text>
                       </View>
-                    </View>
-                  </Pressable>
-                ))}
+                    </Pressable>
+                  );
+                })}
               </ScrollView>
             </SafeAreaView>
           </View>
@@ -1216,38 +1380,33 @@
           presentationStyle="pageSheet"
           onRequestClose={() => setEditSection(null)}
         >
-          <View className="flex-1 bg-black">
-            <SafeAreaView className="flex-1" edges={['top']}>
-              <View className="flex-row items-center justify-between px-4 py-4 border-b border-white/10">
-                <Pressable onPress={() => setEditSection(null)}>
-                  <X size={24} color="#fff" strokeWidth={2} />
+          <View style={{ flex: 1, backgroundColor: '#000' }}>
+            <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 0.5, borderBottomColor: 'rgba(255,255,255,0.1)' }}>
+                <Pressable onPress={() => setEditSection(null)} style={{ width: 44, alignItems: 'flex-start', justifyContent: 'center' }}>
+                  <X size={22} color="#fff" strokeWidth={2.5} />
                 </Pressable>
-                <Text className="text-white text-lg font-semibold">Planning Style</Text>
-                <View style={{ width: 24 }} />
+                <Text style={{ color: '#fff', fontSize: 17, fontWeight: '700', fontFamily: 'Outfit-Bold' }}>Planning Style</Text>
+                <View style={{ width: 44 }} />
               </View>
-              <ScrollView className="flex-1 p-4">
-                <Text className="text-gray-400 mb-4">How do you approach trip planning?</Text>
-                {PLANNING_OPTIONS.map((option) => (
-                  <Pressable
-                    key={option.id}
-                    onPress={() => selectPlanning(option.id as UserProfile['planningStyle'])}
-                    className={`p-4 rounded-2xl mb-3 ${
-                      profile.planningStyle === option.id ? 'bg-white' : 'bg-neutral-900'
-                    }`}
-                  >
-                    <View className="flex-row items-center">
-                      <Text className="text-2xl mr-3">{option.emoji}</Text>
-                      <View>
-                        <Text className={`text-lg font-semibold ${profile.planningStyle === option.id ? 'text-black' : 'text-white'}`}>
-                          {option.label}
-                        </Text>
-                        <Text className={`text-sm ${profile.planningStyle === option.id ? 'text-black/60' : 'text-gray-500'}`}>
-                          {option.desc}
-                        </Text>
+              <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20 }}>
+                <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 14, marginBottom: 20, fontFamily: 'Outfit-Regular' }}>How do you approach trip planning?</Text>
+                {PLANNING_OPTIONS.map((option) => {
+                  const selected = profile.planningStyle === option.id;
+                  return (
+                    <Pressable
+                      key={option.id}
+                      onPress={() => selectPlanning(option.id as UserProfile['planningStyle'])}
+                      style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: selected ? '#fff' : '#1C1C1E', borderRadius: 16, padding: 16, marginBottom: 10 }}
+                    >
+                      <Text style={{ fontSize: 26, marginRight: 14 }}>{option.emoji}</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: selected ? '#000' : '#fff', fontSize: 17, fontWeight: '600', fontFamily: 'Outfit-SemiBold' }}>{option.label}</Text>
+                        <Text style={{ color: selected ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.45)', fontSize: 13, marginTop: 2, fontFamily: 'Outfit-Regular' }}>{option.desc}</Text>
                       </View>
-                    </View>
-                  </Pressable>
-                ))}
+                    </Pressable>
+                  );
+                })}
               </ScrollView>
             </SafeAreaView>
           </View>
@@ -1260,38 +1419,33 @@
           presentationStyle="pageSheet"
           onRequestClose={() => setEditSection(null)}
         >
-          <View className="flex-1 bg-black">
-            <SafeAreaView className="flex-1" edges={['top']}>
-              <View className="flex-row items-center justify-between px-4 py-4 border-b border-white/10">
-                <Pressable onPress={() => setEditSection(null)}>
-                  <X size={24} color="#fff" strokeWidth={2} />
+          <View style={{ flex: 1, backgroundColor: '#000' }}>
+            <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 0.5, borderBottomColor: 'rgba(255,255,255,0.1)' }}>
+                <Pressable onPress={() => setEditSection(null)} style={{ width: 44, alignItems: 'flex-start', justifyContent: 'center' }}>
+                  <X size={22} color="#fff" strokeWidth={2.5} />
                 </Pressable>
-                <Text className="text-white text-lg font-semibold">Personality</Text>
-                <View style={{ width: 24 }} />
+                <Text style={{ color: '#fff', fontSize: 17, fontWeight: '700', fontFamily: 'Outfit-Bold' }}>Personality</Text>
+                <View style={{ width: 44 }} />
               </View>
-              <ScrollView className="flex-1 p-4">
-                <Text className="text-gray-400 mb-4">What's your social energy like?</Text>
-                {PERSONALITY_OPTIONS.map((option) => (
-                  <Pressable
-                    key={option.id}
-                    onPress={() => selectPersonality(option.id as UserProfile['socialEnergy'])}
-                    className={`p-4 rounded-2xl mb-3 ${
-                      profile.socialEnergy === option.id ? 'bg-white' : 'bg-neutral-900'
-                    }`}
-                  >
-                    <View className="flex-row items-center">
-                      <Text className="text-2xl mr-3">{option.emoji}</Text>
-                      <View>
-                        <Text className={`text-lg font-semibold ${profile.socialEnergy === option.id ? 'text-black' : 'text-white'}`}>
-                          {option.label}
-                        </Text>
-                        <Text className={`text-sm ${profile.socialEnergy === option.id ? 'text-black/60' : 'text-gray-500'}`}>
-                          {option.desc}
-                        </Text>
+              <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20 }}>
+                <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 14, marginBottom: 20, fontFamily: 'Outfit-Regular' }}>What's your social energy like?</Text>
+                {PERSONALITY_OPTIONS.map((option) => {
+                  const selected = profile.socialEnergy === option.id;
+                  return (
+                    <Pressable
+                      key={option.id}
+                      onPress={() => selectPersonality(option.id as UserProfile['socialEnergy'])}
+                      style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: selected ? '#fff' : '#1C1C1E', borderRadius: 16, padding: 16, marginBottom: 10 }}
+                    >
+                      <Text style={{ fontSize: 26, marginRight: 14 }}>{option.emoji}</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: selected ? '#000' : '#fff', fontSize: 17, fontWeight: '600', fontFamily: 'Outfit-SemiBold' }}>{option.label}</Text>
+                        <Text style={{ color: selected ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.45)', fontSize: 13, marginTop: 2, fontFamily: 'Outfit-Regular' }}>{option.desc}</Text>
                       </View>
-                    </View>
-                  </Pressable>
-                ))}
+                    </Pressable>
+                  );
+                })}
               </ScrollView>
             </SafeAreaView>
           </View>
@@ -1304,38 +1458,33 @@
           presentationStyle="pageSheet"
           onRequestClose={() => setEditSection(null)}
         >
-          <View className="flex-1 bg-black">
-            <SafeAreaView className="flex-1" edges={['top']}>
-              <View className="flex-row items-center justify-between px-4 py-4 border-b border-white/10">
-                <Pressable onPress={() => setEditSection(null)}>
-                  <X size={24} color="#fff" strokeWidth={2} />
+          <View style={{ flex: 1, backgroundColor: '#000' }}>
+            <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 0.5, borderBottomColor: 'rgba(255,255,255,0.1)' }}>
+                <Pressable onPress={() => setEditSection(null)} style={{ width: 44, alignItems: 'flex-start', justifyContent: 'center' }}>
+                  <X size={22} color="#fff" strokeWidth={2.5} />
                 </Pressable>
-                <Text className="text-white text-lg font-semibold">Experience Level</Text>
-                <View style={{ width: 24 }} />
+                <Text style={{ color: '#fff', fontSize: 17, fontWeight: '700', fontFamily: 'Outfit-Bold' }}>Experience Level</Text>
+                <View style={{ width: 44 }} />
               </View>
-              <ScrollView className="flex-1 p-4">
-                <Text className="text-gray-400 mb-4">How experienced are you as a traveler?</Text>
-                {EXPERIENCE_OPTIONS.map((option) => (
-                  <Pressable
-                    key={option.id}
-                    onPress={() => selectExperience(option.id as UserProfile['experience'])}
-                    className={`p-4 rounded-2xl mb-3 ${
-                      profile.experience === option.id ? 'bg-white' : 'bg-neutral-900'
-                    }`}
-                  >
-                    <View className="flex-row items-center">
-                      <Text className="text-2xl mr-3">{option.emoji}</Text>
-                      <View>
-                        <Text className={`text-lg font-semibold ${profile.experience === option.id ? 'text-black' : 'text-white'}`}>
-                          {option.label}
-                        </Text>
-                        <Text className={`text-sm ${profile.experience === option.id ? 'text-black/60' : 'text-gray-500'}`}>
-                          {option.countries}
-                        </Text>
+              <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20 }}>
+                <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 14, marginBottom: 20, fontFamily: 'Outfit-Regular' }}>How experienced are you as a traveler?</Text>
+                {EXPERIENCE_OPTIONS.map((option) => {
+                  const selected = profile.experience === option.id;
+                  return (
+                    <Pressable
+                      key={option.id}
+                      onPress={() => selectExperience(option.id as UserProfile['experience'])}
+                      style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: selected ? '#fff' : '#1C1C1E', borderRadius: 16, padding: 16, marginBottom: 10 }}
+                    >
+                      <Text style={{ fontSize: 26, marginRight: 14 }}>{option.emoji}</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: selected ? '#000' : '#fff', fontSize: 17, fontWeight: '600', fontFamily: 'Outfit-SemiBold' }}>{option.label}</Text>
+                        <Text style={{ color: selected ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.45)', fontSize: 13, marginTop: 2, fontFamily: 'Outfit-Regular' }}>{option.countries}</Text>
                       </View>
-                    </View>
-                  </Pressable>
-                ))}
+                    </Pressable>
+                  );
+                })}
               </ScrollView>
             </SafeAreaView>
           </View>
@@ -1348,51 +1497,48 @@
           presentationStyle="pageSheet"
           onRequestClose={() => setEditSection(null)}
         >
-          <View className="flex-1 bg-black">
-            <SafeAreaView className="flex-1" edges={['top']}>
-              <View className="flex-row items-center justify-between px-4 py-4 border-b border-white/10">
-                <Pressable onPress={() => setEditSection(null)}>
-                  <X size={24} color="#fff" strokeWidth={2} />
+          <View style={{ flex: 1, backgroundColor: '#000' }}>
+            <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 0.5, borderBottomColor: 'rgba(255,255,255,0.1)' }}>
+                <Pressable onPress={() => setEditSection(null)} style={{ width: 44, alignItems: 'flex-start', justifyContent: 'center' }}>
+                  <X size={22} color="#fff" strokeWidth={2.5} />
                 </Pressable>
-                <Text className="text-white text-lg font-semibold">Places Visited</Text>
-                <Pressable onPress={savePlaces}>
-                  <Check size={24} color="#fff" strokeWidth={2} />
+                <Text style={{ color: '#fff', fontSize: 17, fontWeight: '700', fontFamily: 'Outfit-Bold' }}>Been To</Text>
+                <Pressable onPress={savePlaces} style={{ width: 44, alignItems: 'flex-end', justifyContent: 'center' }}>
+                  <Check size={22} color="#fff" strokeWidth={2.5} />
                 </Pressable>
               </View>
-              <ScrollView className="flex-1 p-4" keyboardShouldPersistTaps="handled">
-                <Text className="text-gray-400 mb-4">Add countries and cities you've visited</Text>
-                <View className="flex-row items-center bg-neutral-900 rounded-2xl px-4 py-3 mb-4">
+              <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20 }} keyboardShouldPersistTaps="handled">
+                <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 14, marginBottom: 20, fontFamily: 'Outfit-Regular' }}>Add countries and cities you've visited</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#1C1C1E', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 4, marginBottom: 16 }}>
                   <TextInput
                     value={newPlaceInput}
                     onChangeText={setNewPlaceInput}
                     placeholder="e.g. Japan, Bali, Paris..."
-                    placeholderTextColor="#6b7280"
-                    className="flex-1 text-white text-base"
+                    placeholderTextColor="rgba(255,255,255,0.3)"
+                    style={{ flex: 1, color: '#fff', fontSize: 16, paddingVertical: 12, fontFamily: 'Outfit-Regular' }}
                     onSubmitEditing={addPlace}
                     returnKeyType="done"
                     autoFocus
                   />
-                  <Pressable
-                    onPress={addPlace}
-                    className="bg-white p-1.5 rounded-full ml-2"
-                  >
+                  <Pressable onPress={addPlace} style={{ backgroundColor: '#fff', width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginLeft: 8 }}>
                     <Plus size={18} color="#000" strokeWidth={2.5} />
                   </Pressable>
                 </View>
-                <View className="flex-row flex-wrap">
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
                   {tempPlaces.map((place, i) => (
                     <Pressable
                       key={i}
                       onPress={() => removePlace(place)}
-                      className="flex-row items-center bg-white/5 px-3 py-1.5 rounded-full mr-2 mb-2"
+                      style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.08)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, marginRight: 8, marginBottom: 8 }}
                     >
-                      <Text className="text-gray-300 mr-1">{place}</Text>
-                      <X size={12} color="#6b7280" strokeWidth={2} />
+                      <Text style={{ color: 'rgba(255,255,255,0.8)', marginRight: 6, fontSize: 14, fontFamily: 'Outfit-Regular' }}>{place}</Text>
+                      <X size={12} color="rgba(255,255,255,0.45)" strokeWidth={2} />
                     </Pressable>
                   ))}
                 </View>
                 {tempPlaces.length === 0 && (
-                  <Text className="text-gray-600 text-sm text-center mt-4">No places added yet</Text>
+                  <Text style={{ color: 'rgba(255,255,255,0.25)', fontSize: 14, textAlign: 'center', marginTop: 24, fontFamily: 'Outfit-Regular' }}>No places added yet</Text>
                 )}
               </ScrollView>
             </SafeAreaView>
@@ -1406,51 +1552,48 @@
           presentationStyle="pageSheet"
           onRequestClose={() => setEditSection(null)}
         >
-          <View className="flex-1 bg-black">
-            <SafeAreaView className="flex-1" edges={['top']}>
-              <View className="flex-row items-center justify-between px-4 py-4 border-b border-white/10">
-                <Pressable onPress={() => setEditSection(null)}>
-                  <X size={24} color="#fff" strokeWidth={2} />
+          <View style={{ flex: 1, backgroundColor: '#000' }}>
+            <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 0.5, borderBottomColor: 'rgba(255,255,255,0.1)' }}>
+                <Pressable onPress={() => setEditSection(null)} style={{ width: 44, alignItems: 'flex-start', justifyContent: 'center' }}>
+                  <X size={22} color="#fff" strokeWidth={2.5} />
                 </Pressable>
-                <Text className="text-white text-lg font-semibold">Languages</Text>
-                <Pressable onPress={saveLanguages}>
-                  <Check size={24} color="#fff" strokeWidth={2} />
+                <Text style={{ color: '#fff', fontSize: 17, fontWeight: '700', fontFamily: 'Outfit-Bold' }}>Languages</Text>
+                <Pressable onPress={saveLanguages} style={{ width: 44, alignItems: 'flex-end', justifyContent: 'center' }}>
+                  <Check size={22} color="#fff" strokeWidth={2.5} />
                 </Pressable>
               </View>
-              <ScrollView className="flex-1 p-4" keyboardShouldPersistTaps="handled">
-                <Text className="text-gray-400 mb-4">Add languages you speak</Text>
-                <View className="flex-row items-center bg-neutral-900 rounded-2xl px-4 py-3 mb-4">
+              <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20 }} keyboardShouldPersistTaps="handled">
+                <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 14, marginBottom: 20, fontFamily: 'Outfit-Regular' }}>Add languages you speak</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#1C1C1E', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 4, marginBottom: 16 }}>
                   <TextInput
                     value={newLanguageInput}
                     onChangeText={setNewLanguageInput}
                     placeholder="e.g. English, Spanish, French..."
-                    placeholderTextColor="#6b7280"
-                    className="flex-1 text-white text-base"
+                    placeholderTextColor="rgba(255,255,255,0.3)"
+                    style={{ flex: 1, color: '#fff', fontSize: 16, paddingVertical: 12, fontFamily: 'Outfit-Regular' }}
                     onSubmitEditing={addLanguage}
                     returnKeyType="done"
                     autoFocus
                   />
-                  <Pressable
-                    onPress={addLanguage}
-                    className="bg-white p-1.5 rounded-full ml-2"
-                  >
+                  <Pressable onPress={addLanguage} style={{ backgroundColor: '#fff', width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginLeft: 8 }}>
                     <Plus size={18} color="#000" strokeWidth={2.5} />
                   </Pressable>
                 </View>
-                <View className="flex-row flex-wrap">
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
                   {tempLanguages.map((lang, i) => (
                     <Pressable
                       key={i}
                       onPress={() => removeLanguage(lang)}
-                      className="flex-row items-center bg-white/10 px-3 py-1.5 rounded-full mr-2 mb-2"
+                      style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.08)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, marginRight: 8, marginBottom: 8 }}
                     >
-                      <Text className="text-white/70 mr-1">{lang}</Text>
-                      <X size={12} color="rgba(255,255,255,0.5)" strokeWidth={2} />
+                      <Text style={{ color: 'rgba(255,255,255,0.8)', marginRight: 6, fontSize: 14, fontFamily: 'Outfit-Regular' }}>{lang}</Text>
+                      <X size={12} color="rgba(255,255,255,0.45)" strokeWidth={2} />
                     </Pressable>
                   ))}
                 </View>
                 {tempLanguages.length === 0 && (
-                  <Text className="text-gray-600 text-sm text-center mt-4">No languages added yet</Text>
+                  <Text style={{ color: 'rgba(255,255,255,0.25)', fontSize: 14, textAlign: 'center', marginTop: 24, fontFamily: 'Outfit-Regular' }}>No languages added yet</Text>
                 )}
               </ScrollView>
             </SafeAreaView>
@@ -1464,33 +1607,34 @@
           presentationStyle="pageSheet"
           onRequestClose={() => setEditSection(null)}
         >
-          <View className="flex-1 bg-black">
-            <SafeAreaView className="flex-1" edges={['top']}>
-              <View className="flex-row items-center justify-between px-4 py-4 border-b border-white/10">
-                <Pressable onPress={() => setEditSection(null)}>
-                  <X size={24} color="#fff" strokeWidth={2} />
+          <View style={{ flex: 1, backgroundColor: '#000' }}>
+            <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 0.5, borderBottomColor: 'rgba(255,255,255,0.1)' }}>
+                <Pressable onPress={() => setEditSection(null)} style={{ width: 44, alignItems: 'flex-start', justifyContent: 'center' }}>
+                  <X size={22} color="#fff" strokeWidth={2.5} />
                 </Pressable>
-                <Text className="text-white text-lg font-semibold">I prefer to travel with</Text>
-                <View style={{ width: 24 }} />
+                <Text style={{ color: '#fff', fontSize: 17, fontWeight: '700', fontFamily: 'Outfit-Bold' }}>Travel With</Text>
+                <View style={{ width: 44 }} />
               </View>
-              <ScrollView className="flex-1 p-4">
-                <Text className="text-gray-400 mb-1">This is a hard filter — it directly affects who you match with.</Text>
-                <Text className="text-gray-600 text-sm mb-6">Choose carefully. Selecting "Everyone" gives you the widest pool of matches.</Text>
-                {TRAVEL_WITH_OPTIONS.map((option) => (
-                  <Pressable
-                    key={option.id}
-                    onPress={() => selectTravelWith(option.id as UserProfile['travelWith'])}
-                    className={`p-4 rounded-2xl mb-3 ${profile.travelWith === option.id ? 'bg-white' : 'bg-neutral-900'}`}
-                  >
-                    <View className="flex-row items-center">
-                      <Text className="text-2xl mr-3">{option.emoji}</Text>
-                      <View>
-                        <Text className="text-white text-lg font-semibold">{option.label}</Text>
-                        <Text className={`text-sm ${profile.travelWith === option.id ? 'text-black/60' : 'text-gray-500'}`}>{option.desc}</Text>
+              <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20 }}>
+                <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 14, marginBottom: 6, fontFamily: 'Outfit-Regular' }}>This is a hard filter — it directly affects who you match with.</Text>
+                <Text style={{ color: 'rgba(255,255,255,0.25)', fontSize: 13, marginBottom: 24, fontFamily: 'Outfit-Regular' }}>Choose carefully. Selecting "Everyone" gives you the widest pool of matches.</Text>
+                {TRAVEL_WITH_OPTIONS.map((option) => {
+                  const selected = profile.travelWith === option.id;
+                  return (
+                    <Pressable
+                      key={option.id}
+                      onPress={() => selectTravelWith(option.id as UserProfile['travelWith'])}
+                      style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: selected ? '#fff' : '#1C1C1E', borderRadius: 16, padding: 16, marginBottom: 10 }}
+                    >
+                      <Text style={{ fontSize: 26, marginRight: 14 }}>{option.emoji}</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: selected ? '#000' : '#fff', fontSize: 17, fontWeight: '600', fontFamily: 'Outfit-SemiBold' }}>{option.label}</Text>
+                        <Text style={{ color: selected ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.45)', fontSize: 13, marginTop: 2, fontFamily: 'Outfit-Regular' }}>{option.desc}</Text>
                       </View>
-                    </View>
-                  </Pressable>
-                ))}
+                    </Pressable>
+                  );
+                })}
               </ScrollView>
             </SafeAreaView>
           </View>
@@ -1503,27 +1647,27 @@
           presentationStyle="pageSheet"
           onRequestClose={() => setEditSection(null)}
         >
-          <View className="flex-1 bg-black">
-            <SafeAreaView className="flex-1" edges={['top']}>
-              <View className="flex-row items-center justify-between px-4 py-4 border-b border-white/10">
-                <Pressable onPress={() => setEditSection(null)}>
-                  <X size={24} color="#fff" strokeWidth={2} />
+          <View style={{ flex: 1, backgroundColor: '#000' }}>
+            <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 0.5, borderBottomColor: 'rgba(255,255,255,0.1)' }}>
+                <Pressable onPress={() => setEditSection(null)} style={{ width: 44, alignItems: 'flex-start', justifyContent: 'center' }}>
+                  <X size={22} color="#fff" strokeWidth={2.5} />
                 </Pressable>
-                <Text className="text-white text-lg font-semibold">Bucket List</Text>
-                <Pressable onPress={saveBucketList}>
-                  <Check size={24} color="#fff" strokeWidth={2} />
+                <Text style={{ color: '#fff', fontSize: 17, fontWeight: '700', fontFamily: 'Outfit-Bold' }}>Bucket List</Text>
+                <Pressable onPress={saveBucketList} style={{ width: 44, alignItems: 'flex-end', justifyContent: 'center' }}>
+                  <Check size={22} color="#fff" strokeWidth={2.5} />
                 </Pressable>
               </View>
-              <ScrollView className="flex-1 p-4" keyboardShouldPersistTaps="handled">
-                <Text className="text-gray-400 mb-1">Destinations you dream of visiting</Text>
-                <Text className="text-gray-600 text-sm mb-4">This drives 30% of your trip match score — the most important field!</Text>
-                <View className="flex-row items-center bg-neutral-900 rounded-2xl px-4 py-3 mb-4">
+              <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20 }} keyboardShouldPersistTaps="handled">
+                <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 14, marginBottom: 4, fontFamily: 'Outfit-Regular' }}>Destinations you dream of visiting</Text>
+                <Text style={{ color: 'rgba(255,255,255,0.25)', fontSize: 13, marginBottom: 20, fontFamily: 'Outfit-Regular' }}>This drives 30% of your match score — the most important field!</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#1C1C1E', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 4, marginBottom: 16 }}>
                   <TextInput
                     value={newBucketInput}
                     onChangeText={setNewBucketInput}
                     placeholder="e.g. Japan, Patagonia, Morocco..."
-                    placeholderTextColor="#6b7280"
-                    className="flex-1 text-white text-base"
+                    placeholderTextColor="rgba(255,255,255,0.3)"
+                    style={{ flex: 1, color: '#fff', fontSize: 16, paddingVertical: 12, fontFamily: 'Outfit-Regular' }}
                     onSubmitEditing={() => {
                       const val = newBucketInput.trim();
                       if (val && !tempBucketList.includes(val)) setTempBucketList(prev => [...prev, val]);
@@ -1538,25 +1682,25 @@
                       if (val && !tempBucketList.includes(val)) { Haptics.selectionAsync(); setTempBucketList(prev => [...prev, val]); }
                       setNewBucketInput('');
                     }}
-                    className="bg-white p-1.5 rounded-full ml-2"
+                    style={{ backgroundColor: '#fff', width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginLeft: 8 }}
                   >
                     <Plus size={18} color="#000" strokeWidth={2.5} />
                   </Pressable>
                 </View>
-                <View className="flex-row flex-wrap">
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
                   {tempBucketList.map((place, i) => (
                     <Pressable
                       key={i}
                       onPress={() => { Haptics.selectionAsync(); setTempBucketList(prev => prev.filter(p => p !== place)); }}
-                      className="flex-row items-center bg-white/5 px-3 py-1.5 rounded-full mr-2 mb-2"
+                      style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.08)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, marginRight: 8, marginBottom: 8 }}
                     >
-                      <Text className="text-gray-300 mr-1">🗺️ {place}</Text>
-                      <X size={12} color="#6b7280" strokeWidth={2} />
+                      <Text style={{ color: 'rgba(255,255,255,0.8)', marginRight: 6, fontSize: 14, fontFamily: 'Outfit-Regular' }}>🗺️ {place}</Text>
+                      <X size={12} color="rgba(255,255,255,0.45)" strokeWidth={2} />
                     </Pressable>
                   ))}
                 </View>
                 {tempBucketList.length === 0 && (
-                  <Text className="text-gray-600 text-sm text-center mt-4">No destinations added yet</Text>
+                  <Text style={{ color: 'rgba(255,255,255,0.25)', fontSize: 14, textAlign: 'center', marginTop: 24, fontFamily: 'Outfit-Regular' }}>No destinations added yet</Text>
                 )}
               </ScrollView>
             </SafeAreaView>
@@ -1570,63 +1714,63 @@
           presentationStyle="pageSheet"
           onRequestClose={() => setEditSection(null)}
         >
-          <View className="flex-1 bg-black">
-            <SafeAreaView className="flex-1" edges={['top']}>
-              <View className="flex-row items-center justify-between px-4 py-4 border-b border-white/10">
-                <Pressable onPress={() => setEditSection(null)}>
-                  <X size={24} color="#fff" strokeWidth={2} />
+          <View style={{ flex: 1, backgroundColor: '#000' }}>
+            <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 0.5, borderBottomColor: 'rgba(255,255,255,0.1)' }}>
+                <Pressable onPress={() => setEditSection(null)} style={{ width: 44, alignItems: 'flex-start', justifyContent: 'center' }}>
+                  <X size={22} color="#fff" strokeWidth={2.5} />
                 </Pressable>
-                <Text className="text-white text-lg font-semibold">Basic Info</Text>
-                <Pressable onPress={saveBasics}>
-                  <Check size={24} color="#fff" strokeWidth={2} />
+                <Text style={{ color: '#fff', fontSize: 17, fontWeight: '700', fontFamily: 'Outfit-Bold' }}>Basic Info</Text>
+                <Pressable onPress={saveBasics} style={{ width: 44, alignItems: 'flex-end', justifyContent: 'center' }}>
+                  <Check size={22} color="#fff" strokeWidth={2.5} />
                 </Pressable>
               </View>
-              <ScrollView className="flex-1 p-4" keyboardShouldPersistTaps="handled">
-                <Text className="text-gray-400 text-xs uppercase tracking-widest mb-2 ml-1">Name</Text>
+              <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20 }} keyboardShouldPersistTaps="handled">
+                <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 8, marginLeft: 4, fontFamily: 'Outfit-SemiBold' }}>NAME</Text>
                 <TextInput
                   value={tempName}
                   onChangeText={setTempName}
                   placeholder="Your name"
-                  placeholderTextColor="#6b7280"
-                  className="bg-neutral-900 text-white text-base rounded-2xl px-4 py-4 mb-4"
+                  placeholderTextColor="rgba(255,255,255,0.3)"
+                  style={{ backgroundColor: '#1C1C1E', color: '#fff', fontSize: 16, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, marginBottom: 20, fontFamily: 'Outfit-Regular' }}
                   autoCorrect={false}
                 />
 
-                <Text className="text-gray-400 text-xs uppercase tracking-widest mb-2 ml-1">Age</Text>
+                <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 8, marginLeft: 4, fontFamily: 'Outfit-SemiBold' }}>AGE</Text>
                 <TextInput
                   value={tempAge}
                   onChangeText={setTempAge}
                   placeholder="Your age"
-                  placeholderTextColor="#6b7280"
+                  placeholderTextColor="rgba(255,255,255,0.3)"
                   keyboardType="number-pad"
-                  className="bg-neutral-900 text-white text-base rounded-2xl px-4 py-4 mb-4"
+                  style={{ backgroundColor: '#1C1C1E', color: '#fff', fontSize: 16, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, marginBottom: 20, fontFamily: 'Outfit-Regular' }}
                 />
 
-                <Text className="text-gray-400 text-xs uppercase tracking-widest mb-2 ml-1">City</Text>
+                <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 8, marginLeft: 4, fontFamily: 'Outfit-SemiBold' }}>CITY</Text>
                 <TextInput
                   value={tempCity}
                   onChangeText={setTempCity}
                   placeholder="Your city"
-                  placeholderTextColor="#6b7280"
-                  className="bg-neutral-900 text-white text-base rounded-2xl px-4 py-4 mb-4"
+                  placeholderTextColor="rgba(255,255,255,0.3)"
+                  style={{ backgroundColor: '#1C1C1E', color: '#fff', fontSize: 16, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, marginBottom: 20, fontFamily: 'Outfit-Regular' }}
                   autoCorrect={false}
                 />
 
-                <Text className="text-gray-400 text-xs uppercase tracking-widest mb-2 ml-1">Country</Text>
+                <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 8, marginLeft: 4, fontFamily: 'Outfit-SemiBold' }}>COUNTRY</Text>
                 <TextInput
                   value={tempCountry}
                   onChangeText={setTempCountry}
                   placeholder="Your country"
-                  placeholderTextColor="#6b7280"
-                  className="bg-neutral-900 text-white text-base rounded-2xl px-4 py-4 mb-4"
+                  placeholderTextColor="rgba(255,255,255,0.3)"
+                  style={{ backgroundColor: '#1C1C1E', color: '#fff', fontSize: 16, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, marginBottom: 28, fontFamily: 'Outfit-Regular' }}
                   autoCorrect={false}
                 />
 
                 <Pressable
                   onPress={saveBasics}
-                  className="bg-white rounded-2xl py-4 items-center mt-2"
+                  style={{ backgroundColor: '#fff', borderRadius: 14, paddingVertical: 16, alignItems: 'center' }}
                 >
-                  <Text className="text-black text-base font-semibold">Save Changes</Text>
+                  <Text style={{ color: '#000', fontSize: 16, fontWeight: '700', fontFamily: 'Outfit-Bold' }}>Save Changes</Text>
                 </Pressable>
               </ScrollView>
             </SafeAreaView>
@@ -1640,41 +1784,38 @@
           presentationStyle="pageSheet"
           onRequestClose={() => { setEditSection(null); setPendingPhoto(null); }}
         >
-          <View className="flex-1 bg-black">
-            <SafeAreaView className="flex-1" edges={['top']}>
-              <View className="flex-row items-center justify-between px-4 py-4 border-b border-white/10">
-                <Pressable onPress={() => { setEditSection(null); setPendingPhoto(null); }}>
-                  <X size={24} color="#fff" strokeWidth={2} />
+          <View style={{ flex: 1, backgroundColor: '#000' }}>
+            <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 0.5, borderBottomColor: 'rgba(255,255,255,0.1)' }}>
+                <Pressable onPress={() => { setEditSection(null); setPendingPhoto(null); }} style={{ width: 44, alignItems: 'flex-start', justifyContent: 'center' }}>
+                  <X size={22} color="#fff" strokeWidth={2.5} />
                 </Pressable>
-                <Text className="text-white text-lg font-semibold">
+                <Text style={{ color: '#fff', fontSize: 17, fontWeight: '700', fontFamily: 'Outfit-Bold' }}>
                   {pendingPhoto ? 'Preview' : 'Edit Photo'}
                 </Text>
-                <View style={{ width: 24 }} />
+                <View style={{ width: 44 }} />
               </View>
-              <ScrollView className="flex-1 p-4">
-                <Text className="text-gray-400 mb-6 text-center">
+              <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20 }}>
+                <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 14, textAlign: 'center', marginBottom: 24, fontFamily: 'Outfit-Regular' }}>
                   {pendingPhoto
                     ? 'Looking good? Save to update your profile.'
                     : 'Tap your photo or the button below to replace it.'}
                 </Text>
-                <View className="items-center mb-8">
-                  <Pressable
-                    onPress={pendingPhoto ? undefined : pickProfilePhoto}
-                    className="relative"
-                  >
+                <View style={{ alignItems: 'center', marginBottom: 32 }}>
+                  <Pressable onPress={pendingPhoto ? undefined : pickProfilePhoto}>
                     {(pendingPhoto || profile.profilePhotos[0]) ? (
                       <Image
                         source={{ uri: pendingPhoto ?? profile.profilePhotos[0] }}
                         style={{ width: 200, height: 267, borderRadius: 16 }}
                       />
                     ) : (
-                      <View style={{ width: 200, height: 267, borderRadius: 16, backgroundColor: '#1f2937', alignItems: 'center', justifyContent: 'center' }}>
-                        <Camera size={48} color="#6b7280" strokeWidth={1.5} />
+                      <View style={{ width: 200, height: 267, borderRadius: 16, backgroundColor: '#1C1C1E', alignItems: 'center', justifyContent: 'center' }}>
+                        <Camera size={48} color="rgba(255,255,255,0.3)" strokeWidth={1.5} />
                       </View>
                     )}
                     {!pendingPhoto && (
-                      <View className="absolute bottom-3 right-3 bg-white p-2 rounded-full">
-                        <Camera size={18} color="#fff" strokeWidth={2} />
+                      <View style={{ position: 'absolute', bottom: 12, right: 12, backgroundColor: '#fff', padding: 8, borderRadius: 20 }}>
+                        <Camera size={18} color="#000" strokeWidth={2} />
                       </View>
                     )}
                   </Pressable>
@@ -1686,27 +1827,27 @@
                     <Pressable
                       onPress={confirmPhotoUpload}
                       disabled={isUploadingPhoto}
-                      className="bg-white rounded-2xl py-4 items-center"
+                      style={{ backgroundColor: '#fff', borderRadius: 14, paddingVertical: 16, alignItems: 'center' }}
                     >
-                      <Text className="text-black text-base font-semibold">
+                      <Text style={{ color: '#000', fontSize: 16, fontWeight: '700', fontFamily: 'Outfit-Bold' }}>
                         {isUploadingPhoto ? 'Saving...' : 'Save Photo'}
                       </Text>
                     </Pressable>
                     <Pressable
                       onPress={cancelPendingPhoto}
                       disabled={isUploadingPhoto}
-                      className="bg-white/10 rounded-2xl py-4 items-center"
+                      style={{ backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 14, paddingVertical: 16, alignItems: 'center' }}
                     >
-                      <Text className="text-white text-base font-semibold">Cancel</Text>
+                      <Text style={{ color: '#fff', fontSize: 16, fontWeight: '600', fontFamily: 'Outfit-SemiBold' }}>Cancel</Text>
                     </Pressable>
                   </View>
                 ) : (
                   // Default: button to pick a new photo
                   <Pressable
                     onPress={pickProfilePhoto}
-                    className="bg-white rounded-2xl py-4 items-center"
+                    style={{ backgroundColor: '#fff', borderRadius: 14, paddingVertical: 16, alignItems: 'center' }}
                   >
-                    <Text className="text-white text-base font-semibold">Replace Photo</Text>
+                    <Text style={{ color: '#000', fontSize: 16, fontWeight: '700', fontFamily: 'Outfit-Bold' }}>Replace Photo</Text>
                   </Pressable>
                 )}
               </ScrollView>

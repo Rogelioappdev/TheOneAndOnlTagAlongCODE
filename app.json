@@ -19,10 +19,18 @@
       "output": "single"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      "@react-native-community/datetimepicker",
+      "./plugins/withSwiftConcurrencyFix"
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "757e1a72-507c-4f1c-9d60-ec08e5db9605"
+      }
     }
   }
 }

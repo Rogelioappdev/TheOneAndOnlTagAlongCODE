@@ -2,9 +2,9 @@ import { Modal, View, Text, Pressable, Image, ScrollView, Dimensions } from 'rea
 import { LinearGradient } from 'expo-linear-gradient';
 import { MapPin, X, Globe, Languages, Zap, Star } from 'lucide-react-native';
 import type { TripPerson } from './WhoIsGoing';
+import UserAvatar from './UserAvatar';
 
 const { width, height } = Dimensions.get('window');
-const PLACEHOLDER = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400';
 
 const STYLE_EMOJI: Record<string, string> = {
   luxury: '✨', backpacking: '🎒', relaxed: '🏖️', cultural: '🏛️',
@@ -24,7 +24,7 @@ interface Props {
 export default function UserPreviewCard({ person, onClose, accentColor = '#4a9d6e' }: Props) {
   if (!person) return null;
 
-  const photoUri = person.image || (person.photos?.[0]) || PLACEHOLDER;
+  const photoUri = person.image || person.photos?.[0] || null;
   const location = [person.city, person.country].filter(Boolean).join(', ') || null;
   const travelStyles = person.travelStyles?.filter(Boolean) ?? [];
   const languages = person.languages?.filter(Boolean) ?? [];
@@ -49,12 +49,15 @@ export default function UserPreviewCard({ person, onClose, accentColor = '#4a9d6
         >
           {/* Photo header */}
           <View style={{ height: 220 }}>
-            <Image
-              source={{ uri: photoUri }}
-              defaultSource={{ uri: PLACEHOLDER }}
-              style={{ width: '100%', height: '100%' }}
-              resizeMode="cover"
-            />
+            {photoUri ? (
+              <Image
+                source={{ uri: photoUri }}
+                style={{ width: '100%', height: '100%' }}
+                resizeMode="cover"
+              />
+            ) : (
+              <UserAvatar uri={null} name={person.name} size={220} borderRadius={0} />
+            )}
             <LinearGradient
               colors={['transparent', 'rgba(26,31,28,0.85)', '#1a1f1c']}
               locations={[0.4, 0.75, 1]}

@@ -11,7 +11,7 @@ import Animated, {
 
 const { width, height } = Dimensions.get('screen');
 
-const SPLASH_IMAGE = require('../../splash.png');
+const SPLASH_IMAGE = require('../mobile/splash.png');
 
 interface CustomSplashScreenProps {
   onFinish: () => void;

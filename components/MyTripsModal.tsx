@@ -1,4 +1,4 @@
- import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import {
   View, Text, Pressable, Image, ScrollView, Modal,
   ActivityIndicator,
@@ -16,6 +16,7 @@ import PublicProfileView, { PublicProfileData } from '@/components/PublicProfile
 import { useMyTrips, useJoinTrip, useLeaveTrip, useDeleteTrip, TripWithDetails } from '@/lib/hooks/useTrips';
 import { useCreateTripConversation, useCreateDirectConversation } from '@/lib/hooks/useChat';
 import { useCurrentUser } from '@/lib/hooks/useUsers';
+import UserAvatar from '@/components/UserAvatar';
 
 type MyTripsTab = 'in' | 'maybe';
 
@@ -64,6 +65,7 @@ export default function MyTripsModal({ visible, onClose }: Props) {
   const [myTripsTab, setMyTripsTab] = useState<MyTripsTab>('in');
   const [showTripDetail, setShowTripDetail] = useState(false);
   const [selectedTrip, setSelectedTrip] = useState<TripWithDetails | null>(null);
+  const [localDetailStatus, setLocalDetailStatus] = useState<'in' | 'maybe' | 'left' | null>(null);
   const [deleteConfirmStep, setDeleteConfirmStep] = useState<0 | 1 | 2>(0);
   const [selectedProfile, setSelectedProfile] = useState<PublicProfileData | null>(null);
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -116,6 +118,7 @@ export default function MyTripsModal({ visible, onClose }: Props) {
   const openTripDetail = useCallback((trip: TripWithDetails) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSelectedTrip(trip);
+    setLocalDetailStatus(null);
     setShowTripDetail(true);
   }, []);
 
@@ -192,7 +195,11 @@ export default function MyTripsModal({ visible, onClose }: Props) {
     const people = buildTripMembers(selectedTrip);
     const peopleIn = people.filter(p => p.status === 'in');
     const peopleMaybe = people.filter(p => p.status === 'maybe');
-    const userStatus = getUserStatusForTrip(selectedTrip);
+    const serverStatus = getUserStatusForTrip(selectedTrip);
+    // localDetailStatus updates immediately on tap; falls back to server value
+    const userStatus = localDetailStatus === 'left' ? null : (localDetailStatus ?? serverStatus);
+    const coverUri = selectedTrip.cover_image ?? selectedTrip.images?.[0] ?? '';
+    const isCreator = selectedTrip.creator_id === currentUserId;
 
     return (
       <Modal
@@ -201,207 +208,248 @@ export default function MyTripsModal({ visible, onClose }: Props) {
         presentationStyle="pageSheet"
         onRequestClose={() => { setDeleteConfirmStep(0); setShowTripDetail(false); }}
       >
-        <View className="flex-1 bg-black">
-          {/* Header Image */}
-          <View style={{ height: 220 }}>
+        <View style={{ flex: 1, backgroundColor: '#000' }}>
+
+          {/* ── Hero ── */}
+          <View style={{ height: 280 }}>
             <Image
-              source={{ uri: selectedTrip.cover_image ?? selectedTrip.images?.[0] ?? '' }}
+              source={{ uri: coverUri }}
               style={{ width: '100%', height: '100%' }}
               resizeMode="cover"
             />
             <LinearGradient
-              colors={['rgba(0,0,0,0.3)', 'transparent', 'rgba(0,0,0,0.95)']}
-              locations={[0, 0.3, 1]}
+              colors={['transparent', 'transparent', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0.90)', 'rgba(0,0,0,0.98)']}
+              locations={[0, 0.38, 0.60, 0.80, 1]}
               style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
             />
+
+            {/* Top bar */}
             <SafeAreaView style={{ position: 'absolute', top: 0, left: 0, right: 0 }} edges={['top']}>
-              <View className="flex-row items-center justify-between px-4 py-2">
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 8 }}>
                 <Pressable
                   onPress={() => { setDeleteConfirmStep(0); setShowTripDetail(false); }}
-                  className="bg-black/50 p-2 rounded-full"
+                  style={{ backgroundColor: 'rgba(0,0,0,0.48)', width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', borderWidth: 0.5, borderColor: 'rgba(255,255,255,0.18)' }}
                 >
-                  <X size={24} color="#fff" strokeWidth={2} />
+                  <X size={18} color="#fff" strokeWidth={2.5} />
                 </Pressable>
-                <View style={{ backgroundColor: userStatus === 'in' ? '#ffffff' : 'rgba(255,255,255,0.18)', paddingHorizontal: 14, paddingVertical: 7, borderRadius: 100 }}>
-                  <Text style={{ color: userStatus === 'in' ? '#000' : 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: '700', fontFamily: 'Outfit-Bold' }}>
-                    {userStatus === 'in' ? "I'm In" : 'Maybe'}
+
+                {/* Current status badge — updates instantly on tap */}
+                <View style={{
+                  backgroundColor:
+                    localDetailStatus === 'left' ? 'rgba(239,68,68,0.18)' :
+                    userStatus === 'in' ? '#fff' :
+                    userStatus === 'maybe' ? 'rgba(255,255,255,0.18)' :
+                    'rgba(0,0,0,0.48)',
+                  paddingHorizontal: 14, paddingVertical: 7, borderRadius: 100,
+                  borderWidth: 0.5,
+                  borderColor:
+                    localDetailStatus === 'left' ? 'rgba(239,68,68,0.4)' :
+                    'rgba(255,255,255,0.22)',
+                }}>
+                  <Text style={{
+                    color:
+                      localDetailStatus === 'left' ? '#ef4444' :
+                      userStatus === 'in' ? '#000' :
+                      'rgba(255,255,255,0.8)',
+                    fontSize: 12, fontWeight: '700', fontFamily: 'Outfit-Bold',
+                  }}>
+                    {localDetailStatus === 'left' ? 'Not Going' :
+                     userStatus === 'in' ? "I'm In" :
+                     userStatus === 'maybe' ? 'Maybe' : 'Not Going'}
                   </Text>
                 </View>
               </View>
             </SafeAreaView>
-            <View className="absolute bottom-4 left-4 right-4">
-              <View className="flex-row items-center mb-1">
-                <MapPin size={16} color="rgba(255,255,255,0.6)" strokeWidth={2} />
-                <Text className="text-white/60 text-sm ml-1">{selectedTrip.country}</Text>
+
+            {/* Destination overlay */}
+            <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: 20, paddingBottom: 18 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+                <MapPin size={12} color="#F0EBE3" strokeWidth={2} />
+                <Text style={{ color: '#F0EBE3', fontSize: 12, fontFamily: 'Outfit-Regular' }}>{selectedTrip.country}</Text>
               </View>
-              <Text className="text-white text-3xl font-bold">{selectedTrip.destination}</Text>
+              <Text style={{ color: '#fff', fontSize: 34, fontFamily: 'Outfit-ExtraBold', letterSpacing: -1.3, lineHeight: 38 }}>
+                {selectedTrip.destination}
+              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 6 }}>
+                {selectedTrip.start_date && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <Calendar size={12} color="rgba(255,255,255,0.6)" strokeWidth={2} />
+                    <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, fontFamily: 'Outfit-Regular' }}>{formatDates(selectedTrip)}</Text>
+                  </View>
+                )}
+                {selectedTrip.budget_level && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <Text style={{ color: 'rgba(255,255,255,0.3)' }}>·</Text>
+                    <DollarSign size={12} color="rgba(255,255,255,0.6)" strokeWidth={2} />
+                    <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, fontFamily: 'Outfit-Regular' }}>{selectedTrip.budget_level}</Text>
+                  </View>
+                )}
+              </View>
             </View>
           </View>
 
-          <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-            <View className="p-4">
-              {/* Quick Info */}
-              <View className="flex-row flex-wrap mb-4">
-                <View className="bg-neutral-900 px-4 py-3 rounded-xl mr-3 mb-3 flex-row items-center">
-                  <Calendar size={16} color="#6b7280" strokeWidth={2} />
-                  <Text className="text-white font-medium ml-2">{formatDates(selectedTrip)}</Text>
-                </View>
-                {selectedTrip.budget_level && (
-                  <View className="bg-neutral-900 px-4 py-3 rounded-xl mr-3 mb-3 flex-row items-center">
-                    <DollarSign size={16} color="#6b7280" strokeWidth={2} />
-                    <Text className="text-white font-medium ml-2">{selectedTrip.budget_level}</Text>
-                  </View>
-                )}
-                {selectedTrip.max_group_size && (
-                  <View className="bg-neutral-900 px-4 py-3 rounded-xl mb-3 flex-row items-center">
-                    <Users size={16} color="#6b7280" strokeWidth={2} />
-                    <Text className="text-white font-medium ml-2">Up to {selectedTrip.max_group_size} people</Text>
-                  </View>
-                )}
-              </View>
+          {/* ── Body ── */}
+          <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }}>
+            <View style={{ paddingHorizontal: 16, paddingTop: 20 }}>
 
-              {selectedTrip.pace && (
-                <View className="flex-row mb-4">
-                  <View className="bg-neutral-900 px-4 py-3 rounded-xl mr-3 flex-row items-center">
-                    <Clock size={16} color="rgba(255,255,255,0.6)" strokeWidth={2} />
-                    <Text className="text-gray-400 text-sm ml-2">Pace:</Text>
-                    <Text className="text-white font-medium ml-1">{selectedTrip.pace}</Text>
-                  </View>
+              {/* Vibe chips */}
+              {(selectedTrip.vibes ?? []).length > 0 && (
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 }}>
+                  {selectedTrip.vibes.map((vibe, i) => (
+                    <View key={i} style={{ backgroundColor: 'rgba(255,255,255,0.09)', borderWidth: 0.5, borderColor: 'rgba(255,255,255,0.16)', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999 }}>
+                      <Text style={{ color: '#F0EBE3', fontSize: 13, fontFamily: 'Outfit-SemiBold' }}>{vibe}</Text>
+                    </View>
+                  ))}
                 </View>
               )}
 
-              {selectedTrip.vibes && selectedTrip.vibes.length > 0 && (
-                <>
-                  <Text className="text-white text-lg font-semibold mb-3">Trip Vibes</Text>
-                  <View className="flex-row flex-wrap mb-4">
-                    {selectedTrip.vibes.map((vibe, i) => (
-                      <View key={i} className="bg-white/10 px-4 py-2 rounded-full mr-2 mb-2">
-                        <Text className="text-white/60 font-medium">{vibe}</Text>
-                      </View>
-                    ))}
-                  </View>
-                </>
+              {/* Group size pill */}
+              {selectedTrip.max_group_size && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, alignSelf: 'flex-start', marginBottom: 20 }}>
+                  <Users size={14} color="rgba(255,255,255,0.5)" strokeWidth={2} />
+                  <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 13, fontFamily: 'Outfit-Regular' }}>Up to {selectedTrip.max_group_size} people</Text>
+                </View>
               )}
 
-              {selectedTrip.description && (
-                <>
-                  <Text className="text-white text-lg font-semibold mb-3">About This Trip</Text>
-                  <Text className="text-gray-400 text-base leading-7 mb-4">
+              {/* Description */}
+              {!!selectedTrip.description && (
+                <View style={{ marginBottom: 24 }}>
+                  <Text style={{ color: '#fff', fontSize: 16, fontFamily: 'Outfit-Bold', marginBottom: 8 }}>About This Trip</Text>
+                  <Text style={{ color: 'rgba(255,255,255,0.52)', fontSize: 15, lineHeight: 24, fontFamily: 'Outfit-Regular' }}>
                     {selectedTrip.description}
                   </Text>
-                </>
+                </View>
               )}
 
+              {/* ── Status picker ── */}
+              <View style={{ marginBottom: 24 }}>
+                <Text style={{ color: '#fff', fontSize: 16, fontFamily: 'Outfit-Bold', marginBottom: 12 }}>Your Status</Text>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {/* I'm In */}
+                  <Pressable
+                    onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setLocalDetailStatus('in'); joinTrip.mutate({ tripId: selectedTrip.id, status: 'in' }); }}
+                    style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 16, backgroundColor: userStatus === 'in' ? '#ffffff' : '#111', borderWidth: 1, borderColor: userStatus === 'in' ? '#ffffff' : 'rgba(255,255,255,0.1)', gap: 5 }}
+                  >
+                    <Check size={18} color={userStatus === 'in' ? '#000' : 'rgba(255,255,255,0.4)'} strokeWidth={2.5} />
+                    <Text style={{ color: userStatus === 'in' ? '#000' : 'rgba(255,255,255,0.4)', fontSize: 13, fontWeight: '700', fontFamily: 'Outfit-Bold' }}>I'm In</Text>
+                  </Pressable>
+                  {/* Maybe */}
+                  <Pressable
+                    onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setLocalDetailStatus('maybe'); joinTrip.mutate({ tripId: selectedTrip.id, status: 'maybe' }); }}
+                    style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 16, backgroundColor: userStatus === 'maybe' ? 'rgba(255,255,255,0.12)' : '#111', borderWidth: 1, borderColor: userStatus === 'maybe' ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.1)', gap: 5 }}
+                  >
+                    <HelpCircle size={18} color={userStatus === 'maybe' ? '#fff' : 'rgba(255,255,255,0.4)'} strokeWidth={2} />
+                    <Text style={{ color: userStatus === 'maybe' ? '#fff' : 'rgba(255,255,255,0.4)', fontSize: 13, fontWeight: '600', fontFamily: 'Outfit-SemiBold' }}>Maybe</Text>
+                  </Pressable>
+                  {/* Not Going */}
+                  <Pressable
+                    onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setLocalDetailStatus('left'); leaveTrip.mutate(selectedTrip.id); setTimeout(() => setShowTripDetail(false), 600); }}
+                    style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 16, backgroundColor: localDetailStatus === 'left' ? 'rgba(239,68,68,0.12)' : '#111', borderWidth: 1, borderColor: localDetailStatus === 'left' ? 'rgba(239,68,68,0.4)' : 'rgba(255,255,255,0.1)', gap: 5 }}
+                  >
+                    <XCircle size={18} color="rgba(239,68,68,0.7)" strokeWidth={2} />
+                    <Text style={{ color: 'rgba(239,68,68,0.7)', fontSize: 13, fontWeight: '600', fontFamily: 'Outfit-SemiBold' }}>Not Going</Text>
+                  </Pressable>
+                </View>
+              </View>
+
+              {/* ── Message Group ── */}
+              <Pressable
+                onPress={() => handleGroupChat(selectedTrip)}
+                style={({ pressed }) => ({
+                  flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+                  paddingVertical: 14, borderRadius: 16, marginBottom: 24,
+                  backgroundColor: pressed ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.08)',
+                  borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)',
+                  gap: 8,
+                })}
+              >
+                <MessageCircle size={18} color="rgba(255,255,255,0.75)" strokeWidth={2} />
+                <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 15, fontWeight: '700', fontFamily: 'Outfit-Bold' }}>Message Group</Text>
+              </Pressable>
+
+              {/* ── Who's Going ── */}
               {peopleIn.length > 0 && (
-                <>
-                  <Text className="text-white text-lg font-semibold mb-3">Going ({peopleIn.length})</Text>
-                  <View className="mb-4">
-                    {peopleIn.map((person, i) => (
-                      <Pressable
-                        key={i}
-                        onPress={() => openProfile(person, selectedTrip)}
-                        className="bg-neutral-900 flex-row items-center p-3 rounded-xl mb-2 active:opacity-80"
-                      >
-                        <Image source={{ uri: person.image }} style={{ width: 48, height: 48, borderRadius: 24 }} />
-                        <View className="flex-1 ml-3">
-                          <View className="flex-row items-center">
-                            <Text className="text-white font-semibold">{person.name}, {person.age}</Text>
-                            {person.isHost && (
-                              <View className="bg-white px-2 py-0.5 rounded-full ml-2">
-                                <Text className="text-white text-xs font-semibold">Host</Text>
-                              </View>
-                            )}
-                          </View>
-                          <Text className="text-gray-500 text-sm">{person.country}</Text>
+                <View style={{ marginBottom: 20 }}>
+                  <Text style={{ color: '#fff', fontSize: 16, fontFamily: 'Outfit-Bold', marginBottom: 12 }}>Going · {peopleIn.length}</Text>
+                  {peopleIn.map((person, i) => (
+                    <Pressable
+                      key={i}
+                      onPress={() => openProfile(person, selectedTrip)}
+                      style={({ pressed }) => ({
+                        flexDirection: 'row', alignItems: 'center', padding: 12,
+                        borderRadius: 18, marginBottom: 8,
+                        backgroundColor: pressed ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.05)',
+                        borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)',
+                      })}
+                    >
+                      <UserAvatar uri={person.image || null} name={person.name} size={46} borderRadius={14} style={{ borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.2)' }} />
+                      <View style={{ flex: 1, marginLeft: 12 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Text style={{ color: '#fff', fontSize: 15, fontFamily: 'Outfit-SemiBold' }}>{person.name}</Text>
+                          {person.age > 0 && <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 14, fontFamily: 'Outfit-Regular' }}>{person.age}</Text>}
+                          {person.isHost && (
+                            <View style={{ backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2 }}>
+                              <Text style={{ color: '#fff', fontSize: 10, fontFamily: 'Outfit-Bold' }}>Host</Text>
+                            </View>
+                          )}
                         </View>
-                        <View className="bg-white/10 px-2 py-1 rounded-full">
-                          <Text className="text-white/60 text-xs font-medium">Going</Text>
-                        </View>
-                      </Pressable>
-                    ))}
-                  </View>
-                </>
+                        {!!person.country && <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, fontFamily: 'Outfit-Regular', marginTop: 2 }}>{person.country}</Text>}
+                      </View>
+                    </Pressable>
+                  ))}
+                </View>
               )}
 
+              {/* ── Maybe section ── */}
               {peopleMaybe.length > 0 && (
-                <>
-                  <Text className="text-white text-lg font-semibold mb-3">Maybe ({peopleMaybe.length})</Text>
-                  <View className="mb-4">
-                    {peopleMaybe.map((person, i) => (
-                      <Pressable
-                        key={i}
-                        onPress={() => openProfile(person, selectedTrip)}
-                        className="bg-neutral-900 flex-row items-center p-3 rounded-xl mb-2 active:opacity-80"
-                      >
-                        <Image source={{ uri: person.image }} style={{ width: 48, height: 48, borderRadius: 24 }} />
-                        <View className="flex-1 ml-3">
-                          <View className="flex-row items-center">
-                            <Text className="text-white font-semibold">{person.name}, {person.age}</Text>
-                            {person.isHost && (
-                              <View className="bg-white px-2 py-0.5 rounded-full ml-2">
-                                <Text className="text-white text-xs font-semibold">Host</Text>
-                              </View>
-                            )}
-                          </View>
-                          <Text className="text-gray-500 text-sm">{person.country}</Text>
-                        </View>
-                        <View className="bg-gray-500/20 px-2 py-1 rounded-full">
-                          <Text className="text-gray-400 text-xs font-medium">Maybe</Text>
-                        </View>
-                      </Pressable>
-                    ))}
+                <View style={{ marginBottom: 20 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+                    <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.07)' }} />
+                    <View style={{ backgroundColor: 'rgba(255,255,255,0.07)', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 3, marginHorizontal: 10 }}>
+                      <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11, fontFamily: 'Outfit-Bold', letterSpacing: 0.4 }}>MAYBE · {peopleMaybe.length}</Text>
+                    </View>
+                    <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.07)' }} />
                   </View>
-                </>
+                  {peopleMaybe.map((person, i) => (
+                    <Pressable
+                      key={i}
+                      onPress={() => openProfile(person, selectedTrip)}
+                      style={({ pressed }) => ({
+                        flexDirection: 'row', alignItems: 'center', padding: 12,
+                        borderRadius: 18, marginBottom: 8,
+                        backgroundColor: pressed ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.04)',
+                        borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)',
+                        opacity: 0.85,
+                      })}
+                    >
+                      <Image source={{ uri: person.image }} style={{ width: 46, height: 46, borderRadius: 14, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.15)' }} />
+                      <View style={{ flex: 1, marginLeft: 12 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 15, fontFamily: 'Outfit-SemiBold' }}>{person.name}</Text>
+                          {person.age > 0 && <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 14 }}>{person.age}</Text>}
+                        </View>
+                        {!!person.country && <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, fontFamily: 'Outfit-Regular', marginTop: 2 }}>{person.country}</Text>}
+                      </View>
+                      <View style={{ backgroundColor: 'rgba(255,255,255,0.07)', borderRadius: 10, paddingHorizontal: 9, paddingVertical: 4 }}>
+                        <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11, fontFamily: 'Outfit-SemiBold' }}>Maybe</Text>
+                      </View>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+
+              {/* ── Delete Trip (creator only) ── */}
+              {isCreator && (
+                <Pressable
+                  onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy); setDeleteConfirmStep(1); }}
+                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 16, backgroundColor: 'rgba(239,68,68,0.08)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.25)', gap: 8 }}
+                >
+                  <Trash2 size={16} color="#ef4444" strokeWidth={2} />
+                  <Text style={{ color: '#ef4444', fontSize: 14, fontFamily: 'Outfit-SemiBold' }}>Delete Trip</Text>
+                </Pressable>
               )}
             </View>
           </ScrollView>
-
-          {/* Bottom Actions */}
-          <SafeAreaView edges={['bottom']} className="px-4 pb-4 pt-4 border-t border-white/10">
-            {selectedTrip.creator_id === currentUserId && (
-              <Pressable
-                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy); setDeleteConfirmStep(1); }}
-                className="flex-row items-center justify-center py-3 mb-3 rounded-xl active:opacity-80"
-                style={{ backgroundColor: 'rgba(239,68,68,0.12)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)' }}
-              >
-                <Trash2 size={17} color="#ef4444" strokeWidth={2} />
-                <Text className="text-red-400 font-semibold ml-2">Delete Trip</Text>
-              </Pressable>
-            )}
-
-            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
-              <Pressable
-                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); joinTrip.mutate({ tripId: selectedTrip.id, status: 'in' }); }}
-                style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 13, borderRadius: 14, backgroundColor: userStatus === 'in' ? '#ffffff' : '#1a1a1a', borderWidth: 0.5, borderColor: userStatus === 'in' ? '#ffffff' : 'rgba(255,255,255,0.08)' }}
-              >
-                <Check size={17} color={userStatus === 'in' ? '#000' : 'rgba(255,255,255,0.45)'} strokeWidth={2.5} />
-                <Text style={{ color: userStatus === 'in' ? '#000' : 'rgba(255,255,255,0.45)', marginLeft: 6, fontWeight: '700', fontFamily: 'Outfit-Bold', fontSize: 14 }}>I'm In</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); joinTrip.mutate({ tripId: selectedTrip.id, status: 'maybe' }); }}
-                style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 13, borderRadius: 14, backgroundColor: userStatus === 'maybe' ? 'rgba(255,255,255,0.12)' : '#1a1a1a', borderWidth: 0.5, borderColor: 'rgba(255,255,255,0.08)' }}
-              >
-                <HelpCircle size={17} color={userStatus === 'maybe' ? '#fff' : 'rgba(255,255,255,0.35)'} strokeWidth={2} />
-                <Text style={{ color: userStatus === 'maybe' ? '#fff' : 'rgba(255,255,255,0.35)', marginLeft: 6, fontWeight: '600', fontFamily: 'Outfit-SemiBold', fontSize: 14 }}>Maybe</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); leaveTrip.mutate(selectedTrip.id); setShowTripDetail(false); }}
-                style={{ paddingHorizontal: 16, paddingVertical: 13, borderRadius: 14, backgroundColor: '#1a1a1a', alignItems: 'center', justifyContent: 'center', borderWidth: 0.5, borderColor: 'rgba(255,255,255,0.08)' }}
-              >
-                <XCircle size={17} color="rgba(239,68,68,0.7)" strokeWidth={2} />
-              </Pressable>
-            </View>
-
-            {userStatus === 'in' && (
-              <Pressable
-                onPress={() => handleGroupChat(selectedTrip)}
-                className="bg-white/10 flex-row items-center justify-center py-3 rounded-xl active:opacity-80"
-              >
-                <MessageCircle size={18} color="rgba(255,255,255,0.6)" strokeWidth={2} />
-                <Text className="text-white/60 font-semibold ml-2">Message Group</Text>
-              </Pressable>
-            )}
-          </SafeAreaView>
 
           {/* Delete confirm step 1 */}
           {deleteConfirmStep === 1 && (

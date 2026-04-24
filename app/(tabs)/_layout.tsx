@@ -329,7 +329,6 @@ export default function TabLayout() {
       }}
     >
       <Tabs.Screen name="my-trips" options={{ title: '', href: null }} />
-      <Tabs.Screen name="matches"  options={{ title: '', href: null }} />
       <Tabs.Screen name="index"    options={{ title: '' }} />
       <Tabs.Screen name="messages" options={{ title: '' }} />
       <Tabs.Screen name="profile"  options={{ title: '' }} />

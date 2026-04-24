@@ -34,6 +34,12 @@ import {
   Pin,
   BellOff,
   Search,
+  Camera,
+  ChevronDown,
+  Pencil,
+  Trash2,
+  Flag,
+  Copy,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
@@ -47,6 +53,7 @@ import Animated, {
   withSpring,
   withTiming,
   runOnJS,
+  FadeOut,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
@@ -57,6 +64,7 @@ import {
   useTripMessages,
   useSendTripMessage,
   useSendImageMessage,
+  useEditTripMessage,
   useToggleReaction,
   useMarkTripChatRead,
   useRealtimeTripMessages,
@@ -141,6 +149,20 @@ import UserProfileModal from '@/components/userprofilemodal';
     return colors[keys[index]] ?? ['#636366', '#48484a'];
   }
 
+  // Returns true when the entire string is made up of emoji characters only
+  function isOnlyEmoji(str: string): boolean {
+    const trimmed = str.trim();
+    if (!trimmed || trimmed.length > 14) return false;
+    try {
+      const stripped = trimmed
+        .replace(/\p{Emoji_Presentation}/gu, '')
+        .replace(/[\uFE0F\u200D\u20E3\s]/g, '');
+      return stripped.length === 0;
+    } catch {
+      return false; // safe fallback for engines without Unicode property support
+    }
+  }
+
   // ─── Avatar ───────────────────────────────────────────────────────────────────
   function Avatar({ name, photo, size = 36 }: { name: string; photo?: string | null; size?: number }) {
     if (photo) {
@@ -215,7 +237,7 @@ import UserProfileModal from '@/components/userprofilemodal';
   const TAPBACK_EMOJIS = ['❤️', '👍', '🔥', '😂', '😮', '✈️'];
 
   function MessageBubble({
-    msg, isMe, showAvatar, showName, showDateAbove, isFirstInGroup, isLastInGroup, isLastMessage, seenByMembers, currentUserId, chatId, onReply, onAvatarPress, onDelete, onImagePress,
+    msg, isMe, showAvatar, showName, showDateAbove, isFirstInGroup, isLastInGroup, isLastMessage, seenByMembers, currentUserId, chatId, onReply, onAvatarPress, onDelete, onImagePress, onReplyTap, isHighlighted, onLongPress,
   }: {
     msg: TripMessageWithSender;
     isMe: boolean;
@@ -232,6 +254,9 @@ import UserProfileModal from '@/components/userprofilemodal';
     onAvatarPress?: () => void;
     onDelete: () => void;
     onImagePress: (uri: string) => void;
+    onReplyTap?: (messageId: string) => void;
+    isHighlighted?: boolean;
+    onLongPress: () => void;
   }) {
     const senderName = msg.sender?.name?.split(' ')[0] ?? null;
     const senderPhoto = msg.sender?.photos?.[0] || msg.sender?.profile_photo;
@@ -264,6 +289,20 @@ import UserProfileModal from '@/components/userprofilemodal';
 
     const isImage = msg.type === 'image';
   const [imgError, setImgError] = useState(false);
+
+  // ── Highlight flash (scroll-to-reply) ──────────────────────────────────────
+  const highlightOpacity = useSharedValue(0);
+  useEffect(() => {
+    if (isHighlighted) {
+      highlightOpacity.value = withTiming(1, { duration: 150 }, () => {
+        highlightOpacity.value = withTiming(0, { duration: 800 });
+      });
+    }
+  }, [isHighlighted]);
+  const highlightStyle = useAnimatedStyle(() => ({
+    backgroundColor: `rgba(10,132,255,${highlightOpacity.value * 0.22})`,
+    borderRadius: 12,
+  }));
 
   // ── Swipe-to-reply gesture ──────────────────────────────────────────────────
   const SWIPE_THRESHOLD = 65;
@@ -305,7 +344,7 @@ import UserProfileModal from '@/components/userprofilemodal';
   // ───────────────────────────────────────────────────────────────────────────
 
     return (
-      <View style={{ marginBottom: isLastInGroup ? 2 : 1 }}>
+      <Animated.View style={[{ marginBottom: isLastInGroup ? 2 : 1 }, highlightStyle]}>
         {showDateAbove && <DateSeparator dateString={msg.created_at} />}
 
         {/* Sender name */}
@@ -355,97 +394,92 @@ import UserProfileModal from '@/components/userprofilemodal';
             </View>
           )}
 
-          {/* Bubble with context menu */}
-          <ContextMenu.Root>
-            <ContextMenu.Trigger>
-              <View style={{ maxWidth: SCREEN_W * 0.72 }}>
-                {/* Reply quote — normalize reply_to since PostgREST self-joins can return arrays */}
-                {(() => {
-                  const replyTo = Array.isArray(msg.reply_to) ? (msg.reply_to[0] ?? null) : (msg.reply_to ?? null);
-                  if (!replyTo?.id) return null;
-                  return (
-                    <View style={{
-                      backgroundColor: isMe ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.08)',
-                      borderRadius: 12,
-                      borderLeftWidth: 3,
-                      borderLeftColor: isMe ? 'rgba(255,255,255,0.5)' : BUBBLE_ME,
-                      padding: 8,
-                      marginBottom: 3,
-                    }}>
-                      <Text style={{ color: isMe ? 'rgba(255,255,255,0.7)' : BUBBLE_ME, fontSize: 12, fontWeight: '700', marginBottom: 2 }} numberOfLines={1}>
-                        {(Array.isArray(replyTo.sender) ? replyTo.sender[0] : replyTo.sender)?.name?.split(' ')[0] ?? ''}
-                      </Text>
-                      <Text style={{ color: isMe ? 'rgba(255,255,255,0.6)' : TEXT2, fontSize: 13 }} numberOfLines={2}>
-                        {replyTo.content}
-                      </Text>
-                    </View>
-                  );
-                })()}
+          {/* Bubble — hold to react or access options */}
+          <Pressable
+            onLongPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              onLongPress();
+            }}
+            delayLongPress={350}
+            style={{ maxWidth: SCREEN_W * 0.72 }}
+          >
+            {/* Reply quote — reply_to is populated via direct ID lookup (see useTripChat.ts) */}
+            {(() => {
+              const replyTo = Array.isArray(msg.reply_to) ? (msg.reply_to[0] ?? null) : (msg.reply_to ?? null);
+              if (!replyTo?.id) return null;
+              return (
+                <Pressable
+                  onPress={() => onReplyTap?.(replyTo.id)}
+                  style={({ pressed }) => ({
+                    backgroundColor: isMe ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.08)',
+                    borderRadius: 12,
+                    borderLeftWidth: 3,
+                    borderLeftColor: isMe ? 'rgba(255,255,255,0.5)' : BUBBLE_ME,
+                    padding: 8,
+                    marginBottom: 3,
+                    opacity: pressed ? 0.7 : 1,
+                  })}
+                >
+                  <Text style={{ color: isMe ? 'rgba(255,255,255,0.7)' : BUBBLE_ME, fontSize: 12, fontWeight: '700', marginBottom: 2 }} numberOfLines={1}>
+                    {(Array.isArray(replyTo.sender) ? replyTo.sender[0] : replyTo.sender)?.name?.split(' ')[0] ?? ''}
+                  </Text>
+                  <Text style={{ color: isMe ? 'rgba(255,255,255,0.6)' : TEXT2, fontSize: 13 }} numberOfLines={2}>
+                    {replyTo.content}
+                  </Text>
+                </Pressable>
+              );
+            })()}
 
-                {/* Image or text bubble */}
-                {isImage ? (
-                  <Pressable
-                    onPress={() => !imgError && onImagePress(msg.content)}
-                    style={{ borderTopLeftRadius, borderTopRightRadius, borderBottomLeftRadius, borderBottomRightRadius, overflow: 'hidden', backgroundColor: SURFACE2 }}
-                  >
-                    {imgError ? (
-                      <View style={{ width: SCREEN_W * 0.6, height: 120, alignItems: 'center', justifyContent: 'center', backgroundColor: SURFACE2 }}>
-                        <ImageIcon size={28} color={TEXT3} strokeWidth={1.5} />
-                        <Text style={{ color: TEXT3, fontSize: 12, marginTop: 6 }}>Image unavailable</Text>
-                      </View>
-                    ) : (
-                      <ExpoImage
-                        source={{ uri: msg.content }}
-                        style={{ width: SCREEN_W * 0.62, height: SCREEN_W * 0.52 }}
-                        contentFit="cover"
-                        cachePolicy="memory-disk"
-                        recyclingKey={msg.id}
-                        transition={150}
-                        onError={() => setImgError(true)}
-                      />
-                    )}
-                  </Pressable>
-                ) : (
-                  <View style={{
-                    backgroundColor: isMe ? BUBBLE_ME : BUBBLE_THEM,
-                    paddingHorizontal: 14,
-                    paddingVertical: 9,
-                    borderTopLeftRadius,
-                    borderTopRightRadius,
-                    borderBottomLeftRadius,
-                    borderBottomRightRadius,
-                  }}>
-                    <Text style={{ color: '#ffffff', fontSize: 16, lineHeight: 22, letterSpacing: -0.1, fontFamily: 'Outfit-Regular' }}>
-                      {msg.content}
-                    </Text>
+            {/* Image or text bubble */}
+            {isImage ? (
+              <Pressable
+                onPress={() => !imgError && onImagePress(msg.content)}
+                onLongPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  onLongPress();
+                }}
+                delayLongPress={350}
+                style={{ borderTopLeftRadius, borderTopRightRadius, borderBottomLeftRadius, borderBottomRightRadius, overflow: 'hidden', backgroundColor: SURFACE2 }}
+              >
+                {imgError ? (
+                  <View style={{ width: SCREEN_W * 0.6, height: 120, alignItems: 'center', justifyContent: 'center', backgroundColor: SURFACE2 }}>
+                    <ImageIcon size={28} color={TEXT3} strokeWidth={1.5} />
+                    <Text style={{ color: TEXT3, fontSize: 12, marginTop: 6 }}>Image unavailable</Text>
                   </View>
+                ) : (
+                  <ExpoImage
+                    source={{ uri: msg.content }}
+                    style={{ width: SCREEN_W * 0.62, height: SCREEN_W * 0.52 }}
+                    contentFit="cover"
+                    cachePolicy="memory-disk"
+                    recyclingKey={msg.id}
+                    transition={150}
+                    onError={() => setImgError(true)}
+                  />
                 )}
+              </Pressable>
+            ) : isOnlyEmoji(msg.content) ? (
+              <View style={{ paddingHorizontal: 6, paddingVertical: 2 }}>
+                <Text style={{ fontSize: 48, lineHeight: 58 }}>
+                  {msg.content}
+                </Text>
               </View>
-            </ContextMenu.Trigger>
-
-            <ContextMenu.Content>
-              {TAPBACK_EMOJIS.map(emoji => (
-                <ContextMenu.Item key={`react-${emoji}`} onSelect={() => handleReact(emoji)}>
-                  <ContextMenu.ItemTitle>{emoji}  {reactionMap[emoji]?.myReactionId ? 'Remove' : 'React'}</ContextMenu.ItemTitle>
-                </ContextMenu.Item>
-              ))}
-              <ContextMenu.Separator />
-              <ContextMenu.Item key="reply" onSelect={onReply}>
-                <ContextMenu.ItemTitle>Reply</ContextMenu.ItemTitle>
-                <ContextMenu.ItemIcon ios={{ name: 'arrowshape.turn.up.left', pointSize: 16 }} />
-              </ContextMenu.Item>
-              <ContextMenu.Item key="copy" onSelect={() => { Clipboard.setStringAsync(msg.content); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}>
-                <ContextMenu.ItemTitle>Copy</ContextMenu.ItemTitle>
-                <ContextMenu.ItemIcon ios={{ name: 'doc.on.doc', pointSize: 16 }} />
-              </ContextMenu.Item>
-              {isMe && (
-                <ContextMenu.Item key="delete" destructive onSelect={onDelete}>
-                  <ContextMenu.ItemTitle>Delete</ContextMenu.ItemTitle>
-                  <ContextMenu.ItemIcon ios={{ name: 'trash', pointSize: 16 }} />
-                </ContextMenu.Item>
-              )}
-            </ContextMenu.Content>
-          </ContextMenu.Root>
+            ) : (
+              <View style={{
+                backgroundColor: isMe ? BUBBLE_ME : BUBBLE_THEM,
+                paddingHorizontal: 14,
+                paddingVertical: 9,
+                borderTopLeftRadius,
+                borderTopRightRadius,
+                borderBottomLeftRadius,
+                borderBottomRightRadius,
+              }}>
+                <Text style={{ color: '#ffffff', fontSize: 16, lineHeight: 22, letterSpacing: -0.1, fontFamily: 'Outfit-Regular' }}>
+                  {msg.content}
+                </Text>
+              </View>
+            )}
+          </Pressable>
         </Animated.View>
 
           </View>
@@ -518,7 +552,259 @@ import UserProfileModal from '@/components/userprofilemodal';
             )}
           </View>
         )}
-      </View>
+      </Animated.View>
+    );
+  }
+
+  // ─── Message Action Sheet (WhatsApp / iMessage style long-press menu) ────────
+  function SheetActionRow({
+    icon, label, onPress, danger,
+  }: { icon: React.ReactNode; label: string; onPress: () => void; danger?: boolean }) {
+    return (
+      <Pressable
+        onPress={onPress}
+        style={({ pressed }) => ({
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingHorizontal: 16,
+          paddingVertical: 15,
+          backgroundColor: pressed ? 'rgba(255,255,255,0.05)' : 'transparent',
+          gap: 14,
+        })}
+      >
+        <View style={{ width: 22, alignItems: 'center' }}>
+          {icon}
+        </View>
+        <Text style={{ color: danger ? DANGER : TEXT, fontSize: 16, fontFamily: 'Outfit-Regular' }}>
+          {label}
+        </Text>
+      </Pressable>
+    );
+  }
+
+  function MessageActionSheet({
+    visible,
+    msg,
+    isMe,
+    chatId,
+    currentUserId,
+    onClose,
+    onReply,
+    onCopy,
+    onEdit,
+    onDelete,
+    onReport,
+  }: {
+    visible: boolean;
+    msg: TripMessageWithSender | null;
+    isMe: boolean;
+    chatId: string;
+    currentUserId: string | null;
+    onClose: () => void;
+    onReply: () => void;
+    onCopy: () => void;
+    onEdit: () => void;
+    onDelete: () => void;
+    onReport: () => void;
+  }) {
+    const insets = useSafeAreaInsets();
+    const toggleReaction = useToggleReaction();
+
+    // Keep the last non-null msg so exit animation has content to show
+    const prevMsgRef = useRef<TripMessageWithSender | null>(null);
+    useEffect(() => {
+      if (msg !== null) prevMsgRef.current = msg;
+    }, [msg]);
+    const displayMsg = msg ?? prevMsgRef.current;
+
+    const slideY = useSharedValue(500);
+    const bgOpacity = useSharedValue(0);
+
+    useEffect(() => {
+      if (visible) {
+        bgOpacity.value = withTiming(1, { duration: 180 });
+        slideY.value = withSpring(0, { stiffness: 280, damping: 28, mass: 0.8 });
+      }
+    }, [visible]);
+
+    const handleClose = () => {
+      bgOpacity.value = withTiming(0, { duration: 150 });
+      slideY.value = withTiming(500, { duration: 220 });
+      setTimeout(onClose, 220);
+    };
+
+    const bgStyle = useAnimatedStyle(() => ({ opacity: bgOpacity.value }));
+    const sheetStyle = useAnimatedStyle(() => ({ transform: [{ translateY: slideY.value }] }));
+
+    if (!displayMsg) return null;
+
+    // Build reaction map for the displayed message
+    const reactions = displayMsg.reactions ?? [];
+    const reactionMap: Record<string, { count: number; myReactionId: string | null }> = {};
+    reactions.forEach(r => {
+      if (!reactionMap[r.emoji]) reactionMap[r.emoji] = { count: 0, myReactionId: null };
+      reactionMap[r.emoji].count++;
+      if (r.user_id === currentUserId) reactionMap[r.emoji].myReactionId = r.id;
+    });
+
+    const handleReact = (emoji: string) => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      const existing = reactionMap[emoji]?.myReactionId ?? null;
+      toggleReaction.mutate({ messageId: displayMsg.id, emoji, chatId, existingReactionId: existing });
+      handleClose();
+    };
+
+    const isMsgImage = displayMsg.type === 'image';
+    const isMsgText = displayMsg.type === 'text';
+    const isMsgEmoji = isMsgText && isOnlyEmoji(displayMsg.content);
+    const senderFirstName = isMe ? 'You' : (displayMsg.sender?.name?.split(' ')[0] ?? '');
+
+    return (
+      <Modal visible={visible} transparent animationType="none" onRequestClose={handleClose} statusBarTranslucent>
+        {/* Dimmed background */}
+        <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.72)' }, bgStyle]}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={handleClose} />
+        </Animated.View>
+
+        {/* Bottom sheet */}
+        <Animated.View style={[{ position: 'absolute', bottom: 0, left: 0, right: 0 }, sheetStyle]}>
+          <View style={{
+            backgroundColor: '#111111',
+            borderTopLeftRadius: 28,
+            borderTopRightRadius: 28,
+            paddingHorizontal: 16,
+            paddingTop: 10,
+            paddingBottom: insets.bottom + 20,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: -6 },
+            shadowOpacity: 0.6,
+            shadowRadius: 16,
+            elevation: 24,
+          }}>
+            {/* Drag handle */}
+            <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.12)', alignSelf: 'center', marginBottom: 18 }} />
+
+            {/* Message preview */}
+            <View style={{
+              backgroundColor: '#1C1C1E',
+              borderRadius: 16,
+              padding: 13,
+              marginBottom: 14,
+              flexDirection: 'row',
+              alignItems: 'flex-start',
+              gap: 10,
+            }}>
+              <Avatar
+                name={displayMsg.sender?.name ?? '?'}
+                photo={displayMsg.sender?.photos?.[0] ?? displayMsg.sender?.profile_photo ?? null}
+                size={30}
+              />
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: BUBBLE_ME, fontSize: 13, fontFamily: 'Outfit-SemiBold', marginBottom: 3 }}>
+                  {senderFirstName}
+                </Text>
+                {isMsgImage ? (
+                  <Text style={{ color: TEXT2, fontSize: 14, fontFamily: 'Outfit-Regular' }}>📷 Photo</Text>
+                ) : (
+                  <Text style={{ color: TEXT, fontSize: 15, lineHeight: 20, fontFamily: 'Outfit-Regular' }} numberOfLines={3}>
+                    {displayMsg.content}
+                  </Text>
+                )}
+              </View>
+            </View>
+
+            {/* Emoji reaction row */}
+            <View style={{
+              flexDirection: 'row',
+              backgroundColor: '#1C1C1E',
+              borderRadius: 36,
+              paddingHorizontal: 6,
+              paddingVertical: 6,
+              marginBottom: 14,
+              justifyContent: 'space-around',
+            }}>
+              {TAPBACK_EMOJIS.map((emoji) => {
+                const isSelected = !!reactionMap[emoji]?.myReactionId;
+                return (
+                  <Pressable
+                    key={emoji}
+                    onPress={() => handleReact(emoji)}
+                    style={({ pressed }) => ({
+                      width: 48, height: 48,
+                      borderRadius: 24,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: isSelected
+                        ? 'rgba(10,132,255,0.25)'
+                        : pressed ? 'rgba(255,255,255,0.08)' : 'transparent',
+                      borderWidth: isSelected ? 1.5 : 0,
+                      borderColor: isSelected ? 'rgba(10,132,255,0.6)' : 'transparent',
+                      transform: [{ scale: pressed ? 0.82 : 1 }],
+                    })}
+                  >
+                    <Text style={{ fontSize: 28 }}>{emoji}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            {/* Action items — each in its own card */}
+            <View style={{ gap: 8 }}>
+              {/* Reply */}
+              <View style={{ backgroundColor: '#1C1C1E', borderRadius: 14, overflow: 'hidden' }}>
+                <SheetActionRow
+                  icon={<Reply size={19} color={TEXT} strokeWidth={2} />}
+                  label="Reply"
+                  onPress={() => { onReply(); handleClose(); }}
+                />
+              </View>
+
+              {/* Copy + Edit grouped (text actions) */}
+              {isMsgText && !isMsgEmoji && (
+                <View style={{ backgroundColor: '#1C1C1E', borderRadius: 14, overflow: 'hidden' }}>
+                  <SheetActionRow
+                    icon={<Copy size={19} color={TEXT} strokeWidth={2} />}
+                    label="Copy Text"
+                    onPress={() => { onCopy(); handleClose(); }}
+                  />
+                  {isMe && (
+                    <>
+                      <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginHorizontal: 16 }} />
+                      <SheetActionRow
+                        icon={<Pencil size={19} color={TEXT} strokeWidth={2} />}
+                        label="Edit Message"
+                        onPress={() => { onEdit(); handleClose(); }}
+                      />
+                    </>
+                  )}
+                </View>
+              )}
+
+              {/* Destructive actions — always their own card */}
+              {isMe && (
+                <View style={{ backgroundColor: '#1C1C1E', borderRadius: 14, overflow: 'hidden' }}>
+                  <SheetActionRow
+                    icon={<Trash2 size={19} color={DANGER} strokeWidth={2} />}
+                    label="Delete Message"
+                    onPress={() => { onDelete(); handleClose(); }}
+                    danger
+                  />
+                </View>
+              )}
+              {!isMe && (
+                <View style={{ backgroundColor: '#1C1C1E', borderRadius: 14, overflow: 'hidden' }}>
+                  <SheetActionRow
+                    icon={<Flag size={19} color={DANGER} strokeWidth={2} />}
+                    label="Report Message"
+                    onPress={() => { onReport(); handleClose(); }}
+                    danger
+                  />
+                </View>
+              )}
+            </View>
+          </View>
+        </Animated.View>
+      </Modal>
     );
   }
 
@@ -605,7 +891,7 @@ import UserProfileModal from '@/components/userprofilemodal';
   }
 
   // ─── Helper to convert chat member to TripPerson ──────────────────────────────
-  function memberToTripPerson(m: { user?: { id?: string; name?: string | null; age?: number | null; photos?: string[] | null; profile_photo?: string | null; country?: string |
+  function memberToTripPerson(m: { status?: string | null; user?: { id?: string; name?: string | null; age?: number | null; photos?: string[] | null; profile_photo?: string | null; country?: string |
   null; city?: string | null; bio?: string | null; travel_styles?: string[] | null; places_visited?: string[] | null; languages?: string[] | null; travel_pace?: string | null;
   social_energy?: string | null; planning_style?: string | null; experience?: string | null } | null }): TripPerson {
     const user = m.user;
@@ -619,6 +905,7 @@ import UserProfileModal from '@/components/userprofilemodal';
       city: user?.city ?? undefined,
       bio: user?.bio ?? undefined,
       isHost: false,
+      status: (m.status === 'maybe' ? 'maybe' : 'in') as 'in' | 'maybe',
       travelStyles: user?.travel_styles ?? [],
       placesVisited: user?.places_visited ?? [],
       languages: user?.languages ?? [],
@@ -651,6 +938,7 @@ import UserProfileModal from '@/components/userprofilemodal';
         .from('trip_members')
         .select(`
           user_id,
+          status,
           user:users(
             id, name, age, profile_photo, photos,
             country, city, bio, travel_styles, places_visited,
@@ -658,10 +946,11 @@ import UserProfileModal from '@/components/userprofilemodal';
           )
         `)
         .eq('trip_id', tripId)
-        .eq('status', 'in');
+        .in('status', ['in', 'maybe']);
       if (data && !error) {
         setLiveMembers(data.map((m: any) => ({
           user_id: m.user_id,
+          status: m.status,
           user: Array.isArray(m.user) ? m.user[0] : m.user,
         })));
       }
@@ -790,6 +1079,20 @@ import UserProfileModal from '@/components/userprofilemodal';
 
     // Reply state
     const [replyTo, setReplyTo] = useState<TripMessageWithSender | null>(null);
+
+    // Edit state
+    const [editingMessage, setEditingMessage] = useState<TripMessageWithSender | null>(null);
+    const editMessage = useEditTripMessage();
+
+    // Long-press action sheet state
+    const [actionSheetMsg, setActionSheetMsg] = useState<TripMessageWithSender | null>(null);
+
+    // Scroll-to-reply highlight state
+    const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
+
+    // Jump-to-latest button state
+    const [isScrolledUp, setIsScrolledUp] = useState(false);
+    const isScrolledUpRef = useRef(false);
 
     // DM profile preview state
     const [dmProfileData, setDmProfileData] = useState<PublicProfileData | null>(null);
@@ -1048,14 +1351,27 @@ import UserProfileModal from '@/components/userprofilemodal';
 
     const handleSend = useCallback(() => {
       const text = inputText.trim();
-      if (!text || !chatId || sendMessage.isPending) return;
+      if (!text || !chatId) return;
+
+      // Edit mode — update existing message
+      if (editingMessage) {
+        if (editMessage.isPending) return;
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        editMessage.mutate({ chatId, messageId: editingMessage.id, content: text });
+        setInputText('');
+        setEditingMessage(null);
+        return;
+      }
+
+      // Normal send
+      if (sendMessage.isPending) return;
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       sendMessage.mutate({ chatId, content: text, type: 'text', replyToId: replyTo?.id ?? null });
       setInputText('');
       setReplyTo(null);
       setTyping(false);
       setTimeout(loadChatMembers, 1000);
-    }, [inputText, chatId, sendMessage, loadChatMembers, replyTo, setTyping]);
+    }, [inputText, chatId, sendMessage, loadChatMembers, replyTo, setTyping, editingMessage, editMessage]);
 
     const handlePickImage = useCallback(async () => {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -1085,6 +1401,44 @@ import UserProfileModal from '@/components/userprofilemodal';
       );
       setTimeout(loadChatMembers, 1000);
     }, [chatId, sendImage, replyTo, loadChatMembers]);
+
+    const handleTakePhoto = useCallback(async () => {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Please allow camera access to take photos.');
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ['images'],
+        quality: 0.8,
+      });
+      if (result.canceled || !result.assets[0]) return;
+      const uri = result.assets[0].uri;
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setPendingImageUri(uri);
+      setReplyTo(null);
+      sendImage.mutate(
+        { chatId, uri, replyToId: replyTo?.id ?? null },
+        {
+          onSuccess: () => setPendingImageUri(null),
+          onError: () => {
+            setPendingImageUri(null);
+            Alert.alert('Upload failed', 'Could not send photo. Please try again.');
+          },
+        }
+      );
+      setTimeout(loadChatMembers, 1000);
+    }, [chatId, sendImage, replyTo, loadChatMembers]);
+
+    const handleScrollToMessage = useCallback((messageId: string) => {
+      const index = messages.findIndex(m => m.id === messageId);
+      if (index === -1) return;
+      try {
+        flatListRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 });
+      } catch {}
+      setHighlightedMessageId(messageId);
+      setTimeout(() => setHighlightedMessageId(null), 1500);
+    }, [messages]);
 
     const handleDeleteMessage = useCallback((msg: TripMessageWithSender) => {
       if (msg.sender_id !== currentUserId) return;
@@ -1235,9 +1589,17 @@ import UserProfileModal from '@/components/userprofilemodal';
 
     // Load older messages when user scrolls near the top
     const handleScroll = useCallback((event: any) => {
-      const y = event.nativeEvent.contentOffset.y;
+      const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+      const y = contentOffset.y;
       if (y < 120 && hasNextPage && !isFetchingNextPage) {
         fetchNextPage();
+      }
+      // Only trigger state update when crossing the threshold to avoid 60fps re-renders
+      const distanceFromBottom = contentSize.height - (y + layoutMeasurement.height);
+      const shouldShow = distanceFromBottom > 200;
+      if (shouldShow !== isScrolledUpRef.current) {
+        isScrolledUpRef.current = shouldShow;
+        setIsScrolledUp(shouldShow);
       }
     }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
@@ -1352,6 +1714,19 @@ import UserProfileModal from '@/components/userprofilemodal';
               onScroll={handleScroll}
               scrollEventThrottle={16}
               maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+              onScrollToIndexFailed={(info) => {
+                flatListRef.current?.scrollToOffset({
+                  offset: info.averageItemLength * info.index,
+                  animated: false,
+                });
+                setTimeout(() => {
+                  flatListRef.current?.scrollToIndex({
+                    index: info.index,
+                    animated: true,
+                    viewPosition: 0.5,
+                  });
+                }, 150);
+              }}
               ListHeaderComponent={
                 isFetchingNextPage ? (
                   <View style={{ paddingVertical: 12, alignItems: 'center' }}>
@@ -1404,6 +1779,9 @@ import UserProfileModal from '@/components/userprofilemodal';
                       if (isDM) handleOpenDmProfile();
                       else handleOpenSenderProfile(item.sender_id);
                     }}
+                    onReplyTap={handleScrollToMessage}
+                    isHighlighted={item.id === highlightedMessageId}
+                    onLongPress={() => setActionSheetMsg(item)}
                   />
                 );
               }}
@@ -1431,9 +1809,52 @@ import UserProfileModal from '@/components/userprofilemodal';
             />
           )}
 
+          {/* Jump to latest button — visible when scrolled up in history */}
+          {isScrolledUp && (
+            <Animated.View
+              entering={FadeIn.duration(150)}
+              exiting={FadeOut.duration(150)}
+              style={{ position: 'absolute', bottom: 76, right: 16, zIndex: 10 }}
+            >
+              <Pressable
+                onPress={() => {
+                  flatListRef.current?.scrollToEnd({ animated: true });
+                  isScrolledUpRef.current = false;
+                  setIsScrolledUp(false);
+                }}
+                style={{
+                  width: 36, height: 36, borderRadius: 18,
+                  backgroundColor: SURFACE2,
+                  borderWidth: 0.5, borderColor: 'rgba(255,255,255,0.18)',
+                  alignItems: 'center', justifyContent: 'center',
+                  shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.45, shadowRadius: 4,
+                  elevation: 4,
+                }}
+              >
+                <ChevronDown size={20} color={TEXT} strokeWidth={2.5} />
+              </Pressable>
+            </Animated.View>
+          )}
+
           <View style={{ borderTopWidth: 0.5, borderTopColor: SEP, backgroundColor: BG }}>
+            {/* Edit mode strip */}
+            {editingMessage && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4, gap: 10 }}>
+                <Pencil size={14} color={ACCENT} strokeWidth={2} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: ACCENT, fontSize: 12, fontFamily: 'Outfit-SemiBold' }} numberOfLines={1}>
+                    Editing message
+                  </Text>
+                  <Text style={{ color: TEXT2, fontSize: 13 }} numberOfLines={1}>{editingMessage.content}</Text>
+                </View>
+                <Pressable onPress={() => { setEditingMessage(null); setInputText(''); }} hitSlop={10}>
+                  <X size={16} color={TEXT3} strokeWidth={2} />
+                </Pressable>
+              </View>
+            )}
             {/* Reply preview strip */}
-            {replyTo && (
+            {replyTo && !editingMessage && (
               <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4, gap: 10 }}>
                 <Reply size={14} color={BUBBLE_ME} strokeWidth={2} />
                 <View style={{ flex: 1 }}>
@@ -1452,7 +1873,7 @@ import UserProfileModal from '@/components/userprofilemodal';
               paddingBottom: insets.bottom > 0 ? insets.bottom : 12,
               flexDirection: 'row', alignItems: 'flex-end', gap: 8,
             }}>
-              {/* Photo button */}
+              {/* Photo library button */}
               <Pressable
                 onPress={handlePickImage}
                 disabled={sendImage.isPending}
@@ -1461,6 +1882,14 @@ import UserProfileModal from '@/components/userprofilemodal';
                 {sendImage.isPending
                   ? <ActivityIndicator size="small" color={TEXT3} />
                   : <ImageIcon size={17} color={TEXT2} strokeWidth={2} />}
+              </Pressable>
+              {/* Camera button */}
+              <Pressable
+                onPress={handleTakePhoto}
+                disabled={sendImage.isPending}
+                style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: SURFACE2, alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Camera size={17} color={sendImage.isPending ? TEXT3 : TEXT2} strokeWidth={2} />
               </Pressable>
               <View style={{
                 flex: 1, backgroundColor: SURFACE, borderRadius: 20,
@@ -1518,6 +1947,40 @@ import UserProfileModal from '@/components/userprofilemodal';
           uri={viewingImageUri}
           visible={!!viewingImageUri}
           onClose={() => setViewingImageUri(null)}
+        />
+
+        {/* Long-press message action sheet */}
+        <MessageActionSheet
+          visible={!!actionSheetMsg}
+          msg={actionSheetMsg}
+          isMe={actionSheetMsg?.sender_id === currentUserId}
+          chatId={chatId}
+          currentUserId={currentUserId}
+          onClose={() => setActionSheetMsg(null)}
+          onReply={() => {
+            if (actionSheetMsg) {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setReplyTo(actionSheetMsg);
+              setEditingMessage(null);
+            }
+          }}
+          onCopy={() => {
+            if (actionSheetMsg) {
+              Clipboard.setStringAsync(actionSheetMsg.content);
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            }
+          }}
+          onEdit={() => {
+            if (actionSheetMsg) {
+              setEditingMessage(actionSheetMsg);
+              setInputText(actionSheetMsg.content);
+              setReplyTo(null);
+            }
+          }}
+          onDelete={() => {
+            if (actionSheetMsg) handleDeleteMessage(actionSheetMsg);
+          }}
+          onReport={() => onReport(conversation)}
         />
       </View>
     );
