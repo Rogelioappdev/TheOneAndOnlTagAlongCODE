@@ -315,20 +315,29 @@ import { useEffect } from "react";
           : 'image/jpeg';
         const path = `${chatId}/${user.id}_${Date.now()}.${ext}`;
 
-        // Use native file upload — avoids fetch(file://) and atob() issues on device
-        const uploadUrl = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/storage/v1/object/chat-images/${path}`;
-        const uploadResult = await FileSystem.uploadAsync(uploadUrl, uri, {
-          httpMethod: 'POST',
-          uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-            'Content-Type': contentType,
-          },
+        // Read file as base64 then upload as Uint8Array (same approach used for profile photos)
+        console.log('[ImageUpload] Starting upload, uri:', uri);
+        const base64 = await FileSystem.readAsStringAsync(uri, {
+          encoding: FileSystem.EncodingType.Base64,
         });
+        console.log('[ImageUpload] base64 length:', base64.length);
 
-        if (uploadResult.status !== 200) {
-          throw new Error(`Upload failed with status ${uploadResult.status}: ${uploadResult.body}`);
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+          bytes[i] = binary.charCodeAt(i);
         }
+        console.log('[ImageUpload] bytes length:', bytes.length, 'uploading to path:', path);
+
+        const { error: uploadError } = await supabase.storage
+          .from('chat-images')
+          .upload(path, bytes, { contentType, upsert: false });
+
+        if (uploadError) {
+          console.error('[ImageUpload] Supabase upload error:', uploadError);
+          throw uploadError;
+        }
+        console.log('[ImageUpload] Upload success');
 
         const { data: { publicUrl } } = supabase.storage
           .from('chat-images')
