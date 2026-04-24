@@ -1,5 +1,6 @@
 import { useEffect } from "react";
   import { useQuery, useMutation, useQueryClient, useInfiniteQuery, InfiniteData } from "@tanstack/react-query";
+  import * as FileSystem from "expo-file-system";
   import { supabase } from "../supabase";
   import type {
     TripChat,
@@ -307,8 +308,6 @@ import { useEffect } from "react";
         const user = session?.user;
         if (!user) throw new Error("Not authenticated");
 
-        const response = await fetch(uri);
-        const blob = await response.blob();
         const ext = (uri.split('.').pop()?.split('?')[0] ?? 'jpg').toLowerCase();
         const contentType = ext === 'png' ? 'image/png'
           : ext === 'gif' ? 'image/gif'
@@ -316,9 +315,19 @@ import { useEffect } from "react";
           : 'image/jpeg';
         const path = `${chatId}/${user.id}_${Date.now()}.${ext}`;
 
+        // fetch() on file:// URIs fails on native — read via FileSystem instead
+        const base64 = await FileSystem.readAsStringAsync(uri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+
         const { error: uploadError } = await supabase.storage
           .from('chat-images')
-          .upload(path, blob, { contentType, upsert: false });
+          .upload(path, bytes, { contentType, upsert: false });
 
         if (uploadError) throw uploadError;
 
