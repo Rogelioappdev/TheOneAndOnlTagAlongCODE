@@ -35,6 +35,16 @@ import {
   getAllOfferings,
 } from '@/lib/revenuecatConfig';
 
+const PRIVACY_URL = 'https://sites.google.com/view/privacypolicytag/p%C3%A1gina-principal';
+const TERMS_URL = 'https://rogelioappdev.github.io/TheOneAndOnlTagAlongCODE/terms.html';
+
+async function openLink(url: string) {
+  try {
+    const supported = await Linking.canOpenURL(url);
+    if (supported) await Linking.openURL(url);
+  } catch {}
+}
+
 interface PremiumPaywallProps {
   onClose: () => void;
   onSubscribe: (plan: SubscriptionPlan) => void;
@@ -323,6 +333,10 @@ export default function PremiumPaywall({ onClose, onSubscribe }: PremiumPaywallP
   const setPremium = usePremiumStore(s => s.setPremium);
 
   useEffect(() => {
+    Image.prefetch(ONBOARDING_IMAGES).catch(() => {});
+  }, []);
+
+  useEffect(() => {
     getAllOfferings().then((allOfferings) => {
       if (allOfferings.length === 0) {
         return getOfferings().then((offering) => {
@@ -568,10 +582,30 @@ function MainPaywall({
           <Pressable
             onPress={() => onRestore(setLoading)}
             disabled={loading}
-            style={{ alignItems: 'center', paddingVertical: 14 }}
+            style={{ alignItems: 'center', paddingVertical: 12 }}
           >
             <Text style={{ color: '#3f3f46', fontSize: 12 }}>Restore purchases</Text>
           </Pressable>
+
+          {/* Apple/Google required legal links */}
+          <View style={{ alignItems: 'center', paddingBottom: 8, gap: 6 }}>
+            <Text style={{ color: '#6b7280', fontSize: 11, textAlign: 'center', lineHeight: 16 }}>
+              Subscription auto-renews until cancelled. Manage in Settings.
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <Pressable onPress={() => openLink(PRIVACY_URL)}>
+                <Text style={{ color: '#6b7280', fontSize: 11, textDecorationLine: 'underline' }}>
+                  Privacy Policy
+                </Text>
+              </Pressable>
+              <Text style={{ color: '#6b7280', fontSize: 11 }}>·</Text>
+              <Pressable onPress={() => openLink(TERMS_URL)}>
+                <Text style={{ color: '#6b7280', fontSize: 11, textDecorationLine: 'underline' }}>
+                  Terms of Use
+                </Text>
+              </Pressable>
+            </View>
+          </View>
         </Animated.View>
         </ScrollView>
       </SafeAreaView>
@@ -712,13 +746,13 @@ function SecondaryPaywall({
               Subscription auto-renews until cancelled. Manage in Settings.
             </Text>
             <View style={{ flexDirection: 'row', gap: 12 }}>
-              <Pressable onPress={() => Linking.openURL('https://sites.google.com/view/privacypolicytag/p%C3%A1gina-principal')}>
+              <Pressable onPress={() => openLink(PRIVACY_URL)}>
                 <Text style={{ color: '#6b7280', fontSize: 11, textDecorationLine: 'underline' }}>
                   Privacy Policy
                 </Text>
               </Pressable>
               <Text style={{ color: '#6b7280', fontSize: 11 }}>·</Text>
-              <Pressable onPress={() => Linking.openURL('https://rogelioappdev.github.io/TheOneAndOnlTagAlongCODE/terms.html')}>
+              <Pressable onPress={() => openLink(TERMS_URL)}>
                 <Text style={{ color: '#6b7280', fontSize: 11, textDecorationLine: 'underline' }}>
                   Terms of Use
                 </Text>

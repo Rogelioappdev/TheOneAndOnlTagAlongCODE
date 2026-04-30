@@ -1,5 +1,5 @@
   import { useState, useEffect, useCallback, useRef } from 'react';
-  import { Text, View, Pressable, ScrollView, Image, Modal, TextInput, Dimensions, Alert, NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
+  import { Text, View, Pressable, ScrollView, FlatList, Image, Modal, TextInput, Dimensions, Alert, Linking, KeyboardAvoidingView, Platform, NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
   import { Image as ExpoImage } from 'expo-image';
   import { useQuery } from '@tanstack/react-query';
   import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -29,8 +29,10 @@
     Compass,
     Bookmark,
     UserCheck,
+    Search,
+    ArrowUpRight,
   } from 'lucide-react-native';
-  import { useRouter } from 'expo-router';
+  import { useRouter, useFocusEffect } from 'expo-router';
   import AsyncStorage from '@react-native-async-storage/async-storage';
   import * as Haptics from 'expo-haptics';
   import * as ImagePicker from 'expo-image-picker';
@@ -99,7 +101,377 @@
     { id: 'male', label: 'Men Only', emoji: '👨', desc: 'Male travelers only' },
   ];
 
+  const COUNTRIES = [
+    { name: 'Afghanistan', flag: '🇦🇫' }, { name: 'Albania', flag: '🇦🇱' }, { name: 'Algeria', flag: '🇩🇿' },
+    { name: 'Andorra', flag: '🇦🇩' }, { name: 'Angola', flag: '🇦🇴' }, { name: 'Antigua and Barbuda', flag: '🇦🇬' },
+    { name: 'Argentina', flag: '🇦🇷' }, { name: 'Armenia', flag: '🇦🇲' }, { name: 'Australia', flag: '🇦🇺' },
+    { name: 'Austria', flag: '🇦🇹' }, { name: 'Azerbaijan', flag: '🇦🇿' }, { name: 'Bahamas', flag: '🇧🇸' },
+    { name: 'Bahrain', flag: '🇧🇭' }, { name: 'Bangladesh', flag: '🇧🇩' }, { name: 'Barbados', flag: '🇧🇧' },
+    { name: 'Belarus', flag: '🇧🇾' }, { name: 'Belgium', flag: '🇧🇪' }, { name: 'Belize', flag: '🇧🇿' },
+    { name: 'Benin', flag: '🇧🇯' }, { name: 'Bhutan', flag: '🇧🇹' }, { name: 'Bolivia', flag: '🇧🇴' },
+    { name: 'Bosnia and Herzegovina', flag: '🇧🇦' }, { name: 'Botswana', flag: '🇧🇼' }, { name: 'Brazil', flag: '🇧🇷' },
+    { name: 'Brunei', flag: '🇧🇳' }, { name: 'Bulgaria', flag: '🇧🇬' }, { name: 'Burkina Faso', flag: '🇧🇫' },
+    { name: 'Burundi', flag: '🇧🇮' }, { name: 'Cambodia', flag: '🇰🇭' }, { name: 'Cameroon', flag: '🇨🇲' },
+    { name: 'Canada', flag: '🇨🇦' }, { name: 'Cape Verde', flag: '🇨🇻' }, { name: 'Central African Republic', flag: '🇨🇫' },
+    { name: 'Chad', flag: '🇹🇩' }, { name: 'Chile', flag: '🇨🇱' }, { name: 'China', flag: '🇨🇳' },
+    { name: 'Colombia', flag: '🇨🇴' }, { name: 'Comoros', flag: '🇰🇲' }, { name: 'Congo', flag: '🇨🇬' },
+    { name: 'Costa Rica', flag: '🇨🇷' }, { name: 'Croatia', flag: '🇭🇷' }, { name: 'Cuba', flag: '🇨🇺' },
+    { name: 'Cyprus', flag: '🇨🇾' }, { name: 'Czech Republic', flag: '🇨🇿' }, { name: 'Denmark', flag: '🇩🇰' },
+    { name: 'Djibouti', flag: '🇩🇯' }, { name: 'Dominican Republic', flag: '🇩🇴' }, { name: 'Ecuador', flag: '🇪🇨' },
+    { name: 'Egypt', flag: '🇪🇬' }, { name: 'El Salvador', flag: '🇸🇻' }, { name: 'Equatorial Guinea', flag: '🇬🇶' },
+    { name: 'Eritrea', flag: '🇪🇷' }, { name: 'Estonia', flag: '🇪🇪' }, { name: 'Eswatini', flag: '🇸🇿' },
+    { name: 'Ethiopia', flag: '🇪🇹' }, { name: 'Fiji', flag: '🇫🇯' }, { name: 'Finland', flag: '🇫🇮' },
+    { name: 'France', flag: '🇫🇷' }, { name: 'Gabon', flag: '🇬🇦' }, { name: 'Gambia', flag: '🇬🇲' },
+    { name: 'Georgia', flag: '🇬🇪' }, { name: 'Germany', flag: '🇩🇪' }, { name: 'Ghana', flag: '🇬🇭' },
+    { name: 'Greece', flag: '🇬🇷' }, { name: 'Grenada', flag: '🇬🇩' }, { name: 'Guatemala', flag: '🇬🇹' },
+    { name: 'Guinea', flag: '🇬🇳' }, { name: 'Guyana', flag: '🇬🇾' }, { name: 'Haiti', flag: '🇭🇹' },
+    { name: 'Honduras', flag: '🇭🇳' }, { name: 'Hungary', flag: '🇭🇺' }, { name: 'Iceland', flag: '🇮🇸' },
+    { name: 'India', flag: '🇮🇳' }, { name: 'Indonesia', flag: '🇮🇩' }, { name: 'Iran', flag: '🇮🇷' },
+    { name: 'Iraq', flag: '🇮🇶' }, { name: 'Ireland', flag: '🇮🇪' }, { name: 'Israel', flag: '🇮🇱' },
+    { name: 'Italy', flag: '🇮🇹' }, { name: 'Jamaica', flag: '🇯🇲' }, { name: 'Japan', flag: '🇯🇵' },
+    { name: 'Jordan', flag: '🇯🇴' }, { name: 'Kazakhstan', flag: '🇰🇿' }, { name: 'Kenya', flag: '🇰🇪' },
+    { name: 'Kuwait', flag: '🇰🇼' }, { name: 'Kyrgyzstan', flag: '🇰🇬' }, { name: 'Laos', flag: '🇱🇦' },
+    { name: 'Latvia', flag: '🇱🇻' }, { name: 'Lebanon', flag: '🇱🇧' }, { name: 'Lesotho', flag: '🇱🇸' },
+    { name: 'Liberia', flag: '🇱🇷' }, { name: 'Libya', flag: '🇱🇾' }, { name: 'Liechtenstein', flag: '🇱🇮' },
+    { name: 'Lithuania', flag: '🇱🇹' }, { name: 'Luxembourg', flag: '🇱🇺' }, { name: 'Madagascar', flag: '🇲🇬' },
+    { name: 'Malawi', flag: '🇲🇼' }, { name: 'Malaysia', flag: '🇲🇾' }, { name: 'Maldives', flag: '🇲🇻' },
+    { name: 'Mali', flag: '🇲🇱' }, { name: 'Malta', flag: '🇲🇹' }, { name: 'Mauritania', flag: '🇲🇷' },
+    { name: 'Mauritius', flag: '🇲🇺' }, { name: 'Mexico', flag: '🇲🇽' }, { name: 'Moldova', flag: '🇲🇩' },
+    { name: 'Monaco', flag: '🇲🇨' }, { name: 'Mongolia', flag: '🇲🇳' }, { name: 'Montenegro', flag: '🇲🇪' },
+    { name: 'Morocco', flag: '🇲🇦' }, { name: 'Mozambique', flag: '🇲🇿' }, { name: 'Myanmar', flag: '🇲🇲' },
+    { name: 'Namibia', flag: '🇳🇦' }, { name: 'Nepal', flag: '🇳🇵' }, { name: 'Netherlands', flag: '🇳🇱' },
+    { name: 'New Zealand', flag: '🇳🇿' }, { name: 'Nicaragua', flag: '🇳🇮' }, { name: 'Niger', flag: '🇳🇪' },
+    { name: 'Nigeria', flag: '🇳🇬' }, { name: 'North Macedonia', flag: '🇲🇰' }, { name: 'Norway', flag: '🇳🇴' },
+    { name: 'Oman', flag: '🇴🇲' }, { name: 'Pakistan', flag: '🇵🇰' }, { name: 'Panama', flag: '🇵🇦' },
+    { name: 'Papua New Guinea', flag: '🇵🇬' }, { name: 'Paraguay', flag: '🇵🇾' }, { name: 'Peru', flag: '🇵🇪' },
+    { name: 'Philippines', flag: '🇵🇭' }, { name: 'Poland', flag: '🇵🇱' }, { name: 'Portugal', flag: '🇵🇹' },
+    { name: 'Qatar', flag: '🇶🇦' }, { name: 'Romania', flag: '🇷🇴' }, { name: 'Russia', flag: '🇷🇺' },
+    { name: 'Rwanda', flag: '🇷🇼' }, { name: 'Saudi Arabia', flag: '🇸🇦' }, { name: 'Senegal', flag: '🇸🇳' },
+    { name: 'Serbia', flag: '🇷🇸' }, { name: 'Seychelles', flag: '🇸🇨' }, { name: 'Sierra Leone', flag: '🇸🇱' },
+    { name: 'Singapore', flag: '🇸🇬' }, { name: 'Slovakia', flag: '🇸🇰' }, { name: 'Slovenia', flag: '🇸🇮' },
+    { name: 'Somalia', flag: '🇸🇴' }, { name: 'South Africa', flag: '🇿🇦' }, { name: 'South Korea', flag: '🇰🇷' },
+    { name: 'South Sudan', flag: '🇸🇸' }, { name: 'Spain', flag: '🇪🇸' }, { name: 'Sri Lanka', flag: '🇱🇰' },
+    { name: 'Sudan', flag: '🇸🇩' }, { name: 'Suriname', flag: '🇸🇷' }, { name: 'Sweden', flag: '🇸🇪' },
+    { name: 'Switzerland', flag: '🇨🇭' }, { name: 'Syria', flag: '🇸🇾' }, { name: 'Taiwan', flag: '🇹🇼' },
+    { name: 'Tajikistan', flag: '🇹🇯' }, { name: 'Tanzania', flag: '🇹🇿' }, { name: 'Thailand', flag: '🇹🇭' },
+    { name: 'Timor-Leste', flag: '🇹🇱' }, { name: 'Togo', flag: '🇹🇬' }, { name: 'Trinidad and Tobago', flag: '🇹🇹' },
+    { name: 'Tunisia', flag: '🇹🇳' }, { name: 'Turkey', flag: '🇹🇷' }, { name: 'Turkmenistan', flag: '🇹🇲' },
+    { name: 'Uganda', flag: '🇺🇬' }, { name: 'Ukraine', flag: '🇺🇦' }, { name: 'United Arab Emirates', flag: '🇦🇪' },
+    { name: 'United Kingdom', flag: '🇬🇧' }, { name: 'United States', flag: '🇺🇸' }, { name: 'Uruguay', flag: '🇺🇾' },
+    { name: 'Uzbekistan', flag: '🇺🇿' }, { name: 'Venezuela', flag: '🇻🇪' }, { name: 'Vietnam', flag: '🇻🇳' },
+    { name: 'Yemen', flag: '🇾🇪' }, { name: 'Zambia', flag: '🇿🇲' }, { name: 'Zimbabwe', flag: '🇿🇼' },
+  ];
+
   type EditSection = 'styles' | 'pace' | 'group' | 'planning' | 'personality' | 'experience' | 'bio' | 'photos' | 'places' | 'languages' | 'basics' | 'travelwith' | 'bucketlist' | null;
+
+  // ─── Profile Setup Flow ────────────────────────────────────────────────────────
+
+  type SetupSelections = {
+    gender: string | null;
+    travelStyles: string[];
+    travelPace: string | null;
+    socialEnergy: string | null;
+    planningStyle: string | null;
+    experience: string | null;
+    groupType: string | null;
+  };
+
+  const GENDER_OPTIONS = [
+    { id: 'male',   label: 'Man',               emoji: '👨', desc: '' },
+    { id: 'female', label: 'Woman',              emoji: '👩', desc: '' },
+    { id: 'other',  label: 'Non-binary / Other', emoji: '🌟', desc: '' },
+  ];
+
+  const SETUP_STEPS = [
+    {
+      key: 'gender',
+      title: 'How do you identify?',
+      subtitle: 'Used to match you with compatible travel groups',
+      type: 'single',
+      options: GENDER_OPTIONS,
+    },
+    {
+      key: 'travelStyles',
+      title: "What's your travel style?",
+      subtitle: 'Pick everything that feels like you',
+      type: 'multi',
+      options: null,
+    },
+    {
+      key: 'travelPace',
+      title: "What's your travel pace?",
+      subtitle: 'How do you move through a destination?',
+      type: 'single',
+      options: PACE_OPTIONS,
+    },
+    {
+      key: 'socialEnergy',
+      title: 'Your social energy?',
+      subtitle: 'How do you recharge on the road?',
+      type: 'single',
+      options: PERSONALITY_OPTIONS,
+    },
+    {
+      key: 'planningStyle',
+      title: 'How do you plan?',
+      subtitle: 'Your natural approach to trips',
+      type: 'single',
+      options: PLANNING_OPTIONS,
+    },
+    {
+      key: 'experience',
+      title: 'How seasoned are you?',
+      subtitle: 'Your travel experience level',
+      type: 'single',
+      options: EXPERIENCE_OPTIONS,
+    },
+    {
+      key: 'groupType',
+      title: 'Group vibe?',
+      subtitle: 'What kind of travel group fits you?',
+      type: 'single',
+      options: GROUP_OPTIONS,
+    },
+  ];
+
+  function ProfileSetupFlow({ onComplete, onSkip }: { onComplete: () => void; onSkip: () => void }) {
+    const updateProfile = useUserProfileStore(s => s.updateProfile);
+    const setProfileSetupCompleted = useUserProfileStore(s => s.setProfileSetupCompleted);
+    const insets = useSafeAreaInsets();
+
+    const [step, setStep] = useState(0);
+    const [showSuccess, setShowSuccess] = useState(false);
+    const [selections, setSelections] = useState<SetupSelections>({
+      gender: null, travelStyles: [], travelPace: null, socialEnergy: null,
+      planningStyle: null, experience: null, groupType: null,
+    });
+
+    const checkScale = useSharedValue(0);
+    const checkOpacity = useSharedValue(0);
+    const checkAnimStyle = useAnimatedStyle(() => ({
+      transform: [{ scale: checkScale.value }],
+      opacity: checkOpacity.value,
+    }));
+
+    const totalSteps = SETUP_STEPS.length;
+    const currentStep = SETUP_STEPS[step];
+
+    const finishSetup = async (finalSelections: SetupSelections) => {
+      setShowSuccess(true);
+      checkScale.value = withSequence(
+        withTiming(1.2, { duration: 350, easing: Easing.out(Easing.back(2)) }),
+        withTiming(1, { duration: 150 }),
+      );
+      checkOpacity.value = withTiming(1, { duration: 300 });
+
+      updateProfile({
+        gender: finalSelections.gender as any,
+        travelStyles: finalSelections.travelStyles,
+        travelPace: finalSelections.travelPace as any,
+        socialEnergy: finalSelections.socialEnergy as any,
+        planningStyle: finalSelections.planningStyle as any,
+        experience: finalSelections.experience as any,
+        groupType: finalSelections.groupType as any,
+      });
+
+      const userId = await getCurrentUserId();
+      if (userId) {
+        supabase.from('users').update({
+          gender: finalSelections.gender,
+          travel_styles: finalSelections.travelStyles,
+          travel_pace: finalSelections.travelPace,
+          social_energy: finalSelections.socialEnergy,
+          planning_style: finalSelections.planningStyle,
+          experience_level: finalSelections.experience,
+          group_type: finalSelections.groupType,
+          profile_setup_completed: true,
+        }).eq('id', userId).then(() => {});
+      }
+
+      // Wait for success animation before marking complete — setProfileSetupCompleted(true)
+      // causes ProfileScreen to switch to the normal profile, unmounting this flow.
+      setTimeout(() => {
+        setProfileSetupCompleted(true);
+        onComplete();
+      }, 1800);
+    };
+
+    const goNext = (updatedSelections: SetupSelections) => {
+      if (step < totalSteps - 1) {
+        setStep(s => s + 1);
+      } else {
+        finishSetup(updatedSelections);
+      }
+    };
+
+    const handleSingleSelect = (id: string) => {
+      const key = currentStep.key;
+      setSelections(prev => ({ ...prev, [key]: id }));
+    };
+
+    const handleMultiToggle = (id: string) => {
+      setSelections(prev => ({
+        ...prev,
+        travelStyles: prev.travelStyles.includes(id)
+          ? prev.travelStyles.filter(s => s !== id)
+          : [...prev.travelStyles, id],
+      }));
+    };
+
+    if (showSuccess) {
+      return (
+        <View style={{ flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
+          <Animated.View style={[{
+            width: 96, height: 96, borderRadius: 48,
+            backgroundColor: 'rgba(240,235,227,0.08)',
+            borderWidth: 1.5, borderColor: 'rgba(240,235,227,0.25)',
+            alignItems: 'center', justifyContent: 'center',
+            marginBottom: 28,
+          }, checkAnimStyle]}>
+            <Check size={40} color="#F0EBE3" strokeWidth={2.5} />
+          </Animated.View>
+          <Text style={{ color: '#fff', fontSize: 28, fontFamily: 'Outfit-ExtraBold', letterSpacing: -0.5, textAlign: 'center', marginBottom: 10 }}>
+            You're all set!
+          </Text>
+          <Text style={{ color: 'rgba(255,255,255,0.42)', fontSize: 15, fontFamily: 'Outfit-Regular', textAlign: 'center', lineHeight: 22 }}>
+            Your travel DNA is saved.{'\n'}Expect better matched trips.
+          </Text>
+        </View>
+      );
+    }
+
+    return (
+      <View style={{ flex: 1, backgroundColor: '#000' }}>
+        <View style={{ paddingTop: insets.top + 12, paddingHorizontal: 20 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, fontFamily: 'Outfit-Regular', marginBottom: 6 }}>
+                {step + 1} of {totalSteps}
+              </Text>
+              <View style={{ height: 3, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 999 }}>
+                <View style={{
+                  height: 3, backgroundColor: '#F0EBE3', borderRadius: 999,
+                  width: `${((step + 1) / totalSteps) * 100}%`,
+                }} />
+              </View>
+            </View>
+            <Pressable onPress={onSkip} style={{ padding: 4 }}>
+              <X size={20} color="rgba(255,255,255,0.3)" strokeWidth={2} />
+            </Pressable>
+          </View>
+        </View>
+
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 28, paddingBottom: 40 }}
+          showsVerticalScrollIndicator={false}
+        >
+          <Text style={{ color: '#fff', fontSize: 28, fontFamily: 'Outfit-ExtraBold', letterSpacing: -0.5, marginBottom: 6 }}>
+            {currentStep.title}
+          </Text>
+          <Text style={{ color: 'rgba(255,255,255,0.42)', fontSize: 15, fontFamily: 'Outfit-Regular', marginBottom: 30 }}>
+            {currentStep.subtitle}
+          </Text>
+
+          {currentStep.key === 'travelStyles' ? (
+            <>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+                {TRAVEL_STYLES.map(opt => {
+                  const selected = selections.travelStyles.includes(opt.id);
+                  return (
+                    <Pressable
+                      key={opt.id}
+                      onPress={() => handleMultiToggle(opt.id)}
+                      style={{
+                        flexDirection: 'row', alignItems: 'center', gap: 8,
+                        paddingHorizontal: 16, paddingVertical: 13,
+                        borderRadius: 999,
+                        backgroundColor: selected ? '#F0EBE3' : 'rgba(255,255,255,0.05)',
+                        borderWidth: 1,
+                        borderColor: selected ? '#F0EBE3' : 'rgba(255,255,255,0.1)',
+                      }}
+                    >
+                      <Text style={{ fontSize: 16 }}>{opt.icon}</Text>
+                      <Text style={{ color: selected ? '#000' : 'rgba(255,255,255,0.7)', fontSize: 15, fontFamily: 'Outfit-SemiBold' }}>
+                        {opt.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <Pressable
+                onPress={() => goNext(selections)}
+                style={{
+                  marginTop: 32,
+                  backgroundColor: selections.travelStyles.length > 0 ? '#F0EBE3' : 'rgba(255,255,255,0.07)',
+                  borderRadius: 999, paddingVertical: 16, alignItems: 'center',
+                }}
+              >
+                <Text style={{
+                  color: selections.travelStyles.length > 0 ? '#000' : 'rgba(255,255,255,0.25)',
+                  fontSize: 16, fontFamily: 'Outfit-Bold',
+                }}>
+                  Next →
+                </Text>
+              </Pressable>
+            </>
+          ) : (
+            <>
+              <View style={{ gap: 10 }}>
+                {(currentStep.options as any[]).map((opt: any) => {
+                  const key = currentStep.key as keyof SetupSelections;
+                  const selected = (selections[key] as string | null) === opt.id;
+                  return (
+                    <Pressable
+                      key={opt.id}
+                      onPress={() => handleSingleSelect(opt.id)}
+                      style={{
+                        flexDirection: 'row', alignItems: 'center', gap: 14,
+                        padding: 18, borderRadius: 16,
+                        backgroundColor: selected ? 'rgba(240,235,227,0.09)' : 'rgba(255,255,255,0.04)',
+                        borderWidth: 1.5,
+                        borderColor: selected ? '#F0EBE3' : 'rgba(255,255,255,0.09)',
+                      }}
+                    >
+                      <Text style={{ fontSize: 24 }}>{opt.emoji}</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: selected ? '#F0EBE3' : '#fff', fontSize: 16, fontFamily: 'Outfit-SemiBold' }}>
+                          {opt.label}
+                        </Text>
+                        <Text style={{ color: 'rgba(255,255,255,0.38)', fontSize: 13, fontFamily: 'Outfit-Regular', marginTop: 2 }}>
+                          {opt.desc ?? opt.countries ?? ''}
+                        </Text>
+                      </View>
+                      {selected && <Check size={18} color="#F0EBE3" strokeWidth={2.5} />}
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <Pressable
+                onPress={() => goNext(selections)}
+                style={{
+                  marginTop: 32,
+                  backgroundColor: (selections[currentStep.key as keyof SetupSelections] as string | null)
+                    ? '#F0EBE3'
+                    : 'rgba(255,255,255,0.07)',
+                  borderRadius: 999, paddingVertical: 16, alignItems: 'center',
+                }}
+              >
+                <Text style={{
+                  color: (selections[currentStep.key as keyof SetupSelections] as string | null)
+                    ? '#000'
+                    : 'rgba(255,255,255,0.25)',
+                  fontSize: 16, fontFamily: 'Outfit-Bold',
+                }}>
+                  {step === totalSteps - 1 ? 'Finish' : 'Next →'}
+                </Text>
+              </Pressable>
+            </>
+          )}
+        </ScrollView>
+      </View>
+    );
+  }
 
   export default function ProfileScreen() {
     const router = useRouter();
@@ -108,6 +480,32 @@
     const updateProfile = useUserProfileStore(s => s.updateProfile);
     const clearUserProfile = useUserProfileStore(s => s.clearProfile);
     const isLoaded = useUserProfileStore(s => s.isLoaded);
+    const profileSetupCompleted = useUserProfileStore(s => s.profileSetupCompleted);
+    const setProfileSetupCompleted = useUserProfileStore(s => s.setProfileSetupCompleted);
+    const [setupSkippedThisSession, setSetupSkippedThisSession] = useState(false);
+
+    // Reset skip state each time the profile tab is focused so the setup flow
+    // reappears when navigating here from the feed nudge card CTA.
+    useFocusEffect(
+      useCallback(() => {
+        if (!profileSetupCompleted) setSetupSkippedThisSession(false);
+      }, [profileSetupCompleted])
+    );
+
+    // On mount: sync profile_setup_completed from DB in case Zustand was wiped (reinstall).
+    useEffect(() => {
+      if (profileSetupCompleted) return;
+      (async () => {
+        const userId = await getCurrentUserId();
+        if (!userId) return;
+        const { data } = await supabase
+          .from('users')
+          .select('profile_setup_completed')
+          .eq('id', userId)
+          .single();
+        if (data?.profile_setup_completed) setProfileSetupCompleted(true);
+      })();
+    }, []);
 
     // Get clear functions from all stores
     const clearMatches = useMatchesStore(s => s.clearAll);
@@ -145,12 +543,12 @@
       return () => subscription.unsubscribe();
     }, []);
 
-    const { data: tripsCount = 0 } = useQuery({
-      queryKey: ['profile-trips-count', currentUserId],
+    const { data: savedTripsCount = 0 } = useQuery({
+      queryKey: ['profile-saved-trips-count', currentUserId],
       enabled: !!currentUserId,
       staleTime: 60_000,
       queryFn: async () => {
-        const { count } = await supabase.from('trip_members').select('*', { count: 'exact', head: true }).eq('user_id', currentUserId!);
+        const { count } = await supabase.from('saved_trips').select('*', { count: 'exact', head: true }).eq('user_id', currentUserId!);
         return count ?? 0;
       },
     });
@@ -186,14 +584,15 @@
     const [tempStyles, setTempStyles] = useState<string[]>([]);
     const [tempPlaces, setTempPlaces] = useState<string[]>([]);
     const [tempLanguages, setTempLanguages] = useState<string[]>([]);
-    const [newPlaceInput, setNewPlaceInput] = useState('');
     const [newLanguageInput, setNewLanguageInput] = useState('');
     const [tempName, setTempName] = useState('');
     const [tempAge, setTempAge] = useState('');
     const [tempCity, setTempCity] = useState('');
     const [tempCountry, setTempCountry] = useState('');
+    const [tempInstagram, setTempInstagram] = useState('');
+    const [showInstagramEdit, setShowInstagramEdit] = useState(false);
     const [tempBucketList, setTempBucketList] = useState<string[]>([]);
-    const [newBucketInput, setNewBucketInput] = useState('');
+    const [countrySearch, setCountrySearch] = useState('');
 
     // Photo preview state — local URI shown as preview before uploading
     const [pendingPhoto, setPendingPhoto] = useState<string | null>(null);
@@ -238,6 +637,7 @@
               zodiac: parsed.zodiac || null,
               mbti: parsed.mbti || null,
               travelQuote: parsed.travelQuote || null,
+              instagram: parsed.instagram || null,
               createdAt: Date.now(),
               updatedAt: Date.now(),
             };
@@ -251,7 +651,7 @@
           if (userId) {
             const { data: dbUser, error } = await supabase
               .from('users')
-              .select('name, age, bio, country, city, gender, travel_with, social_energy, travel_styles, travel_pace, group_type, planning_style, experience_level, places_visited, languages, profile_photo, photos, is_verified')
+              .select('name, age, bio, country, city, gender, travel_with, social_energy, travel_styles, travel_pace, group_type, planning_style, experience_level, places_visited, languages, profile_photo, photos, is_verified, instagram, profile_setup_completed')
               .eq('id', userId)
               .single();
 
@@ -280,10 +680,12 @@
                 zodiac: null,
                 mbti: null,
                 travelQuote: null,
+                instagram: dbUser.instagram || null,
                 createdAt: Date.now(),
                 updatedAt: Date.now(),
               };
               setProfile(userProfile);
+              if (dbUser.profile_setup_completed) setProfileSetupCompleted(true);
               // Cache to AsyncStorage so next load is instant
               await AsyncStorage.setItem('userProfile', JSON.stringify({
                 ...userProfile,
@@ -338,15 +740,16 @@
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       if (section === 'bio') setTempBio(profile?.bio || '');
       if (section === 'styles') setTempStyles(profile?.travelStyles || []);
-      if (section === 'places') { setTempPlaces(profile?.placesVisited || []); setNewPlaceInput(''); }
+      if (section === 'places') { setTempPlaces(profile?.placesVisited || []); setCountrySearch(''); }
       if (section === 'languages') { setTempLanguages(profile?.languages || []); setNewLanguageInput(''); }
       if (section === 'basics') {
         setTempName(profile?.name || '');
         setTempAge(String(profile?.age ?? ''));
         setTempCity(profile?.city || '');
         setTempCountry(profile?.country || '');
+        setTempInstagram(profile?.instagram || '');
       }
-      if (section === 'bucketlist') { setTempBucketList(profile?.bucketList || []); setNewBucketInput(''); }
+      if (section === 'bucketlist') { setTempBucketList(profile?.bucketList || []); setCountrySearch(''); }
       setEditSection(section);
     };
 
@@ -418,19 +821,6 @@
       saveToSupabase({ languages: tempLanguages });
       setEditSection(null);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    };
-
-    const addPlace = () => {
-      const trimmed = newPlaceInput.trim();
-      if (trimmed && !tempPlaces.includes(trimmed)) {
-        setTempPlaces(prev => [...prev, trimmed]);
-      }
-      setNewPlaceInput('');
-    };
-
-    const removePlace = (place: string) => {
-      Haptics.selectionAsync();
-      setTempPlaces(prev => prev.filter(p => p !== place));
     };
 
     const addLanguage = () => {
@@ -615,6 +1005,15 @@
       );
     }
 
+    if (!profileSetupCompleted && !setupSkippedThisSession) {
+      return (
+        <ProfileSetupFlow
+          onComplete={() => {}}
+          onSkip={() => setSetupSkippedThisSession(true)}
+        />
+      );
+    }
+
     const photos = pendingPhoto
       ? [pendingPhoto, ...profile.profilePhotos.slice(1)]
       : profile.profilePhotos.length > 0 ? profile.profilePhotos : [];
@@ -711,6 +1110,12 @@
                 </Text>
               </View>
             )}
+            {profile.instagram && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 4 }}>
+                <Text style={{ fontSize: 12 }}>📸</Text>
+                <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13, fontFamily: 'Outfit-Regular' }}>@{profile.instagram}</Text>
+              </View>
+            )}
           </Pressable>
         </View>
 
@@ -720,16 +1125,66 @@
           {/* Stats row — matches public profile exactly */}
           <View style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: 'rgba(255,255,255,0.08)' }}>
             {[
-              { value: tripsCount, label: 'Trips' },
-              { value: matchesCount, label: 'Matches' },
-              { value: profile.placesVisited.length, label: 'Places' },
+              { value: savedTripsCount, label: 'Saved Trips' },
+              { value: matchesCount, label: 'Travel Companions' },
+              { value: profile.placesVisited.length, label: 'Places Visited' },
             ].map((stat, i) => (
               <View key={i} style={{ flex: 1, alignItems: 'center', paddingVertical: 16, borderRightWidth: i < 2 ? 0.5 : 0, borderRightColor: 'rgba(255,255,255,0.08)' }}>
                 <Text style={{ color: '#F0EBE3', fontSize: 22, fontFamily: 'Outfit-Bold' }}>{stat.value}</Text>
-                <Text style={{ color: 'rgba(255,255,255,0.38)', fontSize: 11, fontFamily: 'Outfit-Regular', marginTop: 2, textTransform: 'uppercase', letterSpacing: 0.8 }}>{stat.label}</Text>
+                <Text style={{ color: 'rgba(255,255,255,0.38)', fontSize: 11, fontFamily: 'Outfit-Regular', marginTop: 2, textTransform: 'uppercase', letterSpacing: 0.4, textAlign: 'center' }}>{stat.label}</Text>
               </View>
             ))}
           </View>
+
+          {/* Instagram link */}
+          {profile.instagram ? (
+            <View style={{ paddingHorizontal: 20, paddingTop: 16, borderBottomWidth: 0.5, borderBottomColor: 'rgba(255,255,255,0.08)', paddingBottom: 16 }}>
+              <Pressable
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  Linking.openURL(`https://instagram.com/${profile.instagram}`);
+                }}
+                onLongPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  setTempInstagram(profile.instagram || '');
+                  setShowInstagramEdit(true);
+                }}
+                style={({ pressed }) => ({
+                  flexDirection: 'row', alignItems: 'center', borderRadius: 16,
+                  overflow: 'hidden', opacity: pressed ? 0.8 : 1, backgroundColor: '#1C1C1E',
+                })}
+              >
+                <LinearGradient
+                  colors={['#F58529', '#DD2A7B', '#8134AF', '#515BD4']}
+                  start={{ x: 0, y: 1 }} end={{ x: 1, y: 0 }}
+                  style={{ width: 4, alignSelf: 'stretch' }}
+                />
+                <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, gap: 12 }}>
+                  <Text style={{ fontSize: 22 }}>📸</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10, fontFamily: 'Outfit-SemiBold', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 2 }}>Instagram</Text>
+                    <Text style={{ color: '#fff', fontSize: 16, fontFamily: 'Outfit-SemiBold' }}>@{profile.instagram}</Text>
+                  </View>
+                  <ArrowUpRight size={18} color="rgba(255,255,255,0.35)" strokeWidth={2} />
+                </View>
+              </Pressable>
+            </View>
+          ) : (
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setTempInstagram('');
+                setShowInstagramEdit(true);
+              }}
+              style={{ paddingHorizontal: 20, paddingTop: 16, borderBottomWidth: 0.5, borderBottomColor: 'rgba(255,255,255,0.08)', paddingBottom: 16 }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', borderStyle: 'dashed', paddingHorizontal: 16, paddingVertical: 14, gap: 12 }}>
+                <Text style={{ fontSize: 22, opacity: 0.35 }}>📸</Text>
+                <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 14, fontFamily: 'Outfit-Regular', flex: 1 }}>Add your Instagram for trip safety</Text>
+                <Plus size={16} color="rgba(255,255,255,0.25)" strokeWidth={2} />
+              </View>
+            </Pressable>
+          )}
 
           <View style={{ padding: 20, gap: 22 }}>
 
@@ -1490,6 +1945,84 @@
           </View>
         </Modal>
 
+        {/* Instagram Edit Modal */}
+        <Modal
+          visible={showInstagramEdit}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setShowInstagramEdit(false)}
+        >
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+          <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' }} onPress={() => setShowInstagramEdit(false)}>
+            <View style={{ flex: 1 }} />
+            <Pressable onPress={e => e.stopPropagation()}>
+              <View style={{ backgroundColor: '#1C1C1E', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 }}>
+                {/* Handle bar */}
+                <View style={{ width: 36, height: 4, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 2, alignSelf: 'center', marginBottom: 24 }} />
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+                  <Text style={{ fontSize: 22 }}>📸</Text>
+                  <Text style={{ color: '#fff', fontSize: 18, fontFamily: 'Outfit-Bold' }}>Edit Instagram</Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#000', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, marginBottom: 12 }}>
+                  <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 16, fontFamily: 'Outfit-Regular', marginRight: 2 }}>@</Text>
+                  <TextInput
+                    value={tempInstagram}
+                    onChangeText={t => setTempInstagram(t.replace(/^@/, ''))}
+                    placeholder="your_handle"
+                    placeholderTextColor="rgba(255,255,255,0.25)"
+                    style={{ flex: 1, color: '#fff', fontSize: 16, fontFamily: 'Outfit-Regular', paddingVertical: 0 }}
+                    autoCorrect={false}
+                    autoCapitalize="none"
+                    autoFocus
+                    returnKeyType="done"
+                    onSubmitEditing={() => {
+                      const clean = tempInstagram.trim();
+                      updateProfile({ instagram: clean || null });
+                      saveToSupabase({ instagram: clean || null });
+                      setShowInstagramEdit(false);
+                      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                    }}
+                  />
+                  {tempInstagram.length > 0 && (
+                    <Pressable onPress={() => setTempInstagram('')} hitSlop={8}>
+                      <X size={16} color="rgba(255,255,255,0.35)" strokeWidth={2} />
+                    </Pressable>
+                  )}
+                </View>
+                <Text style={{ color: 'rgba(255,255,255,0.25)', fontSize: 12, fontFamily: 'Outfit-Regular', marginBottom: 24, marginLeft: 4 }}>
+                  Only visible to your matches and tripmates
+                </Text>
+                <Pressable
+                  onPress={() => {
+                    const clean = tempInstagram.trim();
+                    updateProfile({ instagram: clean || null });
+                    saveToSupabase({ instagram: clean || null });
+                    setShowInstagramEdit(false);
+                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                  }}
+                  style={{ backgroundColor: '#fff', borderRadius: 14, paddingVertical: 15, alignItems: 'center', marginBottom: 12 }}
+                >
+                  <Text style={{ color: '#000', fontSize: 16, fontFamily: 'Outfit-Bold' }}>Save</Text>
+                </Pressable>
+                {profile?.instagram && (
+                  <Pressable
+                    onPress={() => {
+                      updateProfile({ instagram: null });
+                      saveToSupabase({ instagram: null });
+                      setShowInstagramEdit(false);
+                      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                    }}
+                    style={{ alignItems: 'center', paddingVertical: 12 }}
+                  >
+                    <Text style={{ color: 'rgba(255,80,80,0.7)', fontSize: 14, fontFamily: 'Outfit-Regular' }}>Remove Instagram</Text>
+                  </Pressable>
+                )}
+              </View>
+            </Pressable>
+          </Pressable>
+          </KeyboardAvoidingView>
+        </Modal>
+
         {/* Places Visited Edit Modal */}
         <Modal
           visible={editSection === 'places'}
@@ -1499,48 +2032,80 @@
         >
           <View style={{ flex: 1, backgroundColor: '#000' }}>
             <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+              {/* Header */}
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 0.5, borderBottomColor: 'rgba(255,255,255,0.1)' }}>
                 <Pressable onPress={() => setEditSection(null)} style={{ width: 44, alignItems: 'flex-start', justifyContent: 'center' }}>
                   <X size={22} color="#fff" strokeWidth={2.5} />
                 </Pressable>
                 <Text style={{ color: '#fff', fontSize: 17, fontWeight: '700', fontFamily: 'Outfit-Bold' }}>Been To</Text>
                 <Pressable onPress={savePlaces} style={{ width: 44, alignItems: 'flex-end', justifyContent: 'center' }}>
-                  <Check size={22} color="#fff" strokeWidth={2.5} />
+                  <Text style={{ color: '#fff', fontSize: 16, fontFamily: 'Outfit-SemiBold' }}>Save</Text>
                 </Pressable>
               </View>
-              <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20 }} keyboardShouldPersistTaps="handled">
-                <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 14, marginBottom: 20, fontFamily: 'Outfit-Regular' }}>Add countries and cities you've visited</Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#1C1C1E', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 4, marginBottom: 16 }}>
+              {/* Search bar */}
+              <View style={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#1C1C1E', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, gap: 8 }}>
+                  <Search size={16} color="rgba(255,255,255,0.4)" strokeWidth={2} />
                   <TextInput
-                    value={newPlaceInput}
-                    onChangeText={setNewPlaceInput}
-                    placeholder="e.g. Japan, Bali, Paris..."
+                    value={countrySearch}
+                    onChangeText={setCountrySearch}
+                    placeholder="Search countries..."
                     placeholderTextColor="rgba(255,255,255,0.3)"
-                    style={{ flex: 1, color: '#fff', fontSize: 16, paddingVertical: 12, fontFamily: 'Outfit-Regular' }}
-                    onSubmitEditing={addPlace}
-                    returnKeyType="done"
+                    style={{ flex: 1, color: '#fff', fontSize: 15, fontFamily: 'Outfit-Regular', paddingVertical: 0 }}
                     autoFocus
                   />
-                  <Pressable onPress={addPlace} style={{ backgroundColor: '#fff', width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginLeft: 8 }}>
-                    <Plus size={18} color="#000" strokeWidth={2.5} />
-                  </Pressable>
-                </View>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-                  {tempPlaces.map((place, i) => (
-                    <Pressable
-                      key={i}
-                      onPress={() => removePlace(place)}
-                      style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.08)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, marginRight: 8, marginBottom: 8 }}
-                    >
-                      <Text style={{ color: 'rgba(255,255,255,0.8)', marginRight: 6, fontSize: 14, fontFamily: 'Outfit-Regular' }}>{place}</Text>
-                      <X size={12} color="rgba(255,255,255,0.45)" strokeWidth={2} />
+                  {countrySearch.length > 0 && (
+                    <Pressable onPress={() => setCountrySearch('')} hitSlop={8}>
+                      <X size={14} color="rgba(255,255,255,0.4)" strokeWidth={2.5} />
                     </Pressable>
-                  ))}
+                  )}
                 </View>
-                {tempPlaces.length === 0 && (
-                  <Text style={{ color: 'rgba(255,255,255,0.25)', fontSize: 14, textAlign: 'center', marginTop: 24, fontFamily: 'Outfit-Regular' }}>No places added yet</Text>
-                )}
-              </ScrollView>
+              </View>
+              {/* Country list */}
+              <FlatList
+                data={countrySearch.trim() ? COUNTRIES.filter(c => c.name.toLowerCase().includes(countrySearch.toLowerCase())) : COUNTRIES}
+                keyExtractor={item => item.name}
+                keyboardShouldPersistTaps="handled"
+                ListHeaderComponent={tempPlaces.length > 0 ? (
+                  <View style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 4 }}>
+                    <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, fontFamily: 'Outfit-SemiBold', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 12 }}>
+                      Selected ({tempPlaces.length})
+                    </Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+                      {tempPlaces.map((place, i) => (
+                        <Pressable
+                          key={i}
+                          onPress={() => { Haptics.selectionAsync(); setTempPlaces(prev => prev.filter(p => p !== place)); }}
+                          style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 24, gap: 8 }}
+                        >
+                          <Text style={{ fontSize: 20 }}>{COUNTRIES.find(c => c.name === place)?.flag ?? '🌍'}</Text>
+                          <Text style={{ color: '#000', fontSize: 15, fontFamily: 'Outfit-SemiBold' }}>{place}</Text>
+                          <X size={13} color="rgba(0,0,0,0.35)" strokeWidth={2.5} />
+                        </Pressable>
+                      ))}
+                    </View>
+                    <View style={{ height: 0.5, backgroundColor: 'rgba(255,255,255,0.1)', marginTop: 16 }} />
+                  </View>
+                ) : null}
+                ListEmptyComponent={<Text style={{ color: 'rgba(255,255,255,0.3)', textAlign: 'center', marginTop: 40, fontFamily: 'Outfit-Regular', fontSize: 15 }}>No countries found</Text>}
+                renderItem={({ item }) => {
+                  const isSelected = tempPlaces.includes(item.name);
+                  return (
+                    <Pressable
+                      onPress={() => {
+                        Haptics.selectionAsync();
+                        setTempPlaces(prev => isSelected ? prev.filter(p => p !== item.name) : [...prev, item.name]);
+                      }}
+                      style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 13, backgroundColor: isSelected ? 'rgba(255,255,255,0.05)' : 'transparent' }}
+                    >
+                      <Text style={{ fontSize: 22, marginRight: 14, lineHeight: 28 }}>{item.flag}</Text>
+                      <Text style={{ flex: 1, color: isSelected ? '#fff' : 'rgba(255,255,255,0.75)', fontSize: 16, fontFamily: isSelected ? 'Outfit-SemiBold' : 'Outfit-Regular' }}>{item.name}</Text>
+                      {isSelected && <Check size={18} color="#fff" strokeWidth={2.5} />}
+                    </Pressable>
+                  );
+                }}
+                ItemSeparatorComponent={() => <View style={{ height: 0.5, backgroundColor: 'rgba(255,255,255,0.05)', marginLeft: 56 }} />}
+              />
             </SafeAreaView>
           </View>
         </Modal>
@@ -1649,60 +2214,83 @@
         >
           <View style={{ flex: 1, backgroundColor: '#000' }}>
             <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+              {/* Header */}
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 0.5, borderBottomColor: 'rgba(255,255,255,0.1)' }}>
                 <Pressable onPress={() => setEditSection(null)} style={{ width: 44, alignItems: 'flex-start', justifyContent: 'center' }}>
                   <X size={22} color="#fff" strokeWidth={2.5} />
                 </Pressable>
-                <Text style={{ color: '#fff', fontSize: 17, fontWeight: '700', fontFamily: 'Outfit-Bold' }}>Bucket List</Text>
+                <View style={{ alignItems: 'center' }}>
+                  <Text style={{ color: '#fff', fontSize: 17, fontWeight: '700', fontFamily: 'Outfit-Bold' }}>Bucket List</Text>
+                  <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, fontFamily: 'Outfit-Regular', marginTop: 1 }}>Drives 30% of your match score</Text>
+                </View>
                 <Pressable onPress={saveBucketList} style={{ width: 44, alignItems: 'flex-end', justifyContent: 'center' }}>
-                  <Check size={22} color="#fff" strokeWidth={2.5} />
+                  <Text style={{ color: '#fff', fontSize: 16, fontFamily: 'Outfit-SemiBold' }}>Save</Text>
                 </Pressable>
               </View>
-              <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20 }} keyboardShouldPersistTaps="handled">
-                <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 14, marginBottom: 4, fontFamily: 'Outfit-Regular' }}>Destinations you dream of visiting</Text>
-                <Text style={{ color: 'rgba(255,255,255,0.25)', fontSize: 13, marginBottom: 20, fontFamily: 'Outfit-Regular' }}>This drives 30% of your match score — the most important field!</Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#1C1C1E', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 4, marginBottom: 16 }}>
+              {/* Search bar */}
+              <View style={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#1C1C1E', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, gap: 8 }}>
+                  <Search size={16} color="rgba(255,255,255,0.4)" strokeWidth={2} />
                   <TextInput
-                    value={newBucketInput}
-                    onChangeText={setNewBucketInput}
-                    placeholder="e.g. Japan, Patagonia, Morocco..."
+                    value={countrySearch}
+                    onChangeText={setCountrySearch}
+                    placeholder="Search countries..."
                     placeholderTextColor="rgba(255,255,255,0.3)"
-                    style={{ flex: 1, color: '#fff', fontSize: 16, paddingVertical: 12, fontFamily: 'Outfit-Regular' }}
-                    onSubmitEditing={() => {
-                      const val = newBucketInput.trim();
-                      if (val && !tempBucketList.includes(val)) setTempBucketList(prev => [...prev, val]);
-                      setNewBucketInput('');
-                    }}
-                    returnKeyType="done"
+                    style={{ flex: 1, color: '#fff', fontSize: 15, fontFamily: 'Outfit-Regular', paddingVertical: 0 }}
                     autoFocus
                   />
-                  <Pressable
-                    onPress={() => {
-                      const val = newBucketInput.trim();
-                      if (val && !tempBucketList.includes(val)) { Haptics.selectionAsync(); setTempBucketList(prev => [...prev, val]); }
-                      setNewBucketInput('');
-                    }}
-                    style={{ backgroundColor: '#fff', width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginLeft: 8 }}
-                  >
-                    <Plus size={18} color="#000" strokeWidth={2.5} />
-                  </Pressable>
-                </View>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-                  {tempBucketList.map((place, i) => (
-                    <Pressable
-                      key={i}
-                      onPress={() => { Haptics.selectionAsync(); setTempBucketList(prev => prev.filter(p => p !== place)); }}
-                      style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.08)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, marginRight: 8, marginBottom: 8 }}
-                    >
-                      <Text style={{ color: 'rgba(255,255,255,0.8)', marginRight: 6, fontSize: 14, fontFamily: 'Outfit-Regular' }}>🗺️ {place}</Text>
-                      <X size={12} color="rgba(255,255,255,0.45)" strokeWidth={2} />
+                  {countrySearch.length > 0 && (
+                    <Pressable onPress={() => setCountrySearch('')} hitSlop={8}>
+                      <X size={14} color="rgba(255,255,255,0.4)" strokeWidth={2.5} />
                     </Pressable>
-                  ))}
+                  )}
                 </View>
-                {tempBucketList.length === 0 && (
-                  <Text style={{ color: 'rgba(255,255,255,0.25)', fontSize: 14, textAlign: 'center', marginTop: 24, fontFamily: 'Outfit-Regular' }}>No destinations added yet</Text>
-                )}
-              </ScrollView>
+              </View>
+              {/* Country list */}
+              <FlatList
+                data={countrySearch.trim() ? COUNTRIES.filter(c => c.name.toLowerCase().includes(countrySearch.toLowerCase())) : COUNTRIES}
+                keyExtractor={item => item.name}
+                keyboardShouldPersistTaps="handled"
+                ListHeaderComponent={tempBucketList.length > 0 ? (
+                  <View style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 4 }}>
+                    <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, fontFamily: 'Outfit-SemiBold', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 12 }}>
+                      Selected ({tempBucketList.length})
+                    </Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+                      {tempBucketList.map((place, i) => (
+                        <Pressable
+                          key={i}
+                          onPress={() => { Haptics.selectionAsync(); setTempBucketList(prev => prev.filter(p => p !== place)); }}
+                          style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 24, gap: 8 }}
+                        >
+                          <Text style={{ fontSize: 20 }}>{COUNTRIES.find(c => c.name === place)?.flag ?? '🌍'}</Text>
+                          <Text style={{ color: '#000', fontSize: 15, fontFamily: 'Outfit-SemiBold' }}>{place}</Text>
+                          <X size={13} color="rgba(0,0,0,0.35)" strokeWidth={2.5} />
+                        </Pressable>
+                      ))}
+                    </View>
+                    <View style={{ height: 0.5, backgroundColor: 'rgba(255,255,255,0.1)', marginTop: 16 }} />
+                  </View>
+                ) : null}
+                ListEmptyComponent={<Text style={{ color: 'rgba(255,255,255,0.3)', textAlign: 'center', marginTop: 40, fontFamily: 'Outfit-Regular', fontSize: 15 }}>No countries found</Text>}
+                renderItem={({ item }) => {
+                  const isSelected = tempBucketList.includes(item.name);
+                  return (
+                    <Pressable
+                      onPress={() => {
+                        Haptics.selectionAsync();
+                        setTempBucketList(prev => isSelected ? prev.filter(p => p !== item.name) : [...prev, item.name]);
+                      }}
+                      style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 13, backgroundColor: isSelected ? 'rgba(255,255,255,0.05)' : 'transparent' }}
+                    >
+                      <Text style={{ fontSize: 22, marginRight: 14, lineHeight: 28 }}>{item.flag}</Text>
+                      <Text style={{ flex: 1, color: isSelected ? '#fff' : 'rgba(255,255,255,0.75)', fontSize: 16, fontFamily: isSelected ? 'Outfit-SemiBold' : 'Outfit-Regular' }}>{item.name}</Text>
+                      {isSelected && <Check size={18} color="#fff" strokeWidth={2.5} />}
+                    </Pressable>
+                  );
+                }}
+                ItemSeparatorComponent={() => <View style={{ height: 0.5, backgroundColor: 'rgba(255,255,255,0.05)', marginLeft: 56 }} />}
+              />
             </SafeAreaView>
           </View>
         </Modal>
@@ -1762,13 +2350,13 @@
                   onChangeText={setTempCountry}
                   placeholder="Your country"
                   placeholderTextColor="rgba(255,255,255,0.3)"
-                  style={{ backgroundColor: '#1C1C1E', color: '#fff', fontSize: 16, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, marginBottom: 28, fontFamily: 'Outfit-Regular' }}
+                  style={{ backgroundColor: '#1C1C1E', color: '#fff', fontSize: 16, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, marginBottom: 20, fontFamily: 'Outfit-Regular' }}
                   autoCorrect={false}
                 />
 
                 <Pressable
                   onPress={saveBasics}
-                  style={{ backgroundColor: '#fff', borderRadius: 14, paddingVertical: 16, alignItems: 'center' }}
+                  style={{ backgroundColor: '#fff', borderRadius: 14, paddingVertical: 16, alignItems: 'center', marginTop: 8 }}
                 >
                   <Text style={{ color: '#000', fontSize: 16, fontWeight: '700', fontFamily: 'Outfit-Bold' }}>Save Changes</Text>
                 </Pressable>

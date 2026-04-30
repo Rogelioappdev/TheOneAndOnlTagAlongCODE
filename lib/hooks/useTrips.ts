@@ -16,15 +16,29 @@ export interface TripWithDetails extends Trip {
   creator: UserProfile;
   members: Array<TripMember & { user: UserProfile }>;
   member_count: number;
+  save_count: number;
 }
 
-// Get all trips for feed
+// Get all trips for feed, excluding trips created by blocked users
 export function useTrips() {
   return useQuery({
     queryKey: tripKeys.feed(),
     staleTime: 1000 * 60 * 2, // 2 minutes — trip feed is fine slightly stale
     queryFn: async (): Promise<TripWithDetails[]> => {
-      const { data, error } = await supabase
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id;
+
+      // Fetch blocked user IDs so we can exclude their trips from the feed
+      let blockedIds: string[] = [];
+      if (userId) {
+        const { data: blocks } = await supabase
+          .from("user_blocks")
+          .select("blocked_id")
+          .eq("blocker_id", userId);
+        blockedIds = (blocks ?? []).map((b: any) => b.blocked_id as string);
+      }
+
+      let query = supabase
         .from("trips")
         .select(
           `
@@ -33,18 +47,26 @@ export function useTrips() {
           members:trip_members(
             *,
             user:users(*)
-          )
+          ),
+          saves:saved_trips(count)
         `
         )
         .eq("status", "planning")
         .order("created_at", { ascending: false })
         .limit(50);
 
+      if (blockedIds.length > 0) {
+        query = query.not("creator_id", "in", `(${blockedIds.join(",")})`);
+      }
+
+      const { data, error } = await query;
+
       if (error) throw error;
 
-      return (data ?? []).map((trip) => ({
+      return (data ?? []).map((trip: any) => ({
         ...trip,
         member_count: trip.members?.length ?? 0,
+        save_count: (trip.saves?.[0]?.count ?? 0) as number,
       })) as TripWithDetails[];
     },
   });
@@ -401,7 +423,7 @@ export function useSaveTrip() {
   });
 }
 
-// Unsave trip
+// Unsave trip — also evicts the user from the group chat if they only saved (not joined)
 export function useUnsaveTrip() {
   const queryClient = useQueryClient();
 
@@ -419,9 +441,51 @@ export function useUnsaveTrip() {
         .eq("user_id", user.id);
 
       if (error) throw error;
+
+      // Only remove from chat if they haven't actually joined the trip
+      const { data: membership } = await supabase
+        .from("trip_members")
+        .select("status")
+        .eq("trip_id", tripId)
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (!membership || (membership.status !== "in" && membership.status !== "maybe")) {
+        const { data: chat } = await supabase
+          .from("trip_chats")
+          .select("id")
+          .eq("trip_id", tripId)
+          .maybeSingle();
+
+        if (chat) {
+          await supabase
+            .from("trip_chat_members")
+            .delete()
+            .eq("trip_chat_id", chat.id)
+            .eq("user_id", user.id);
+        }
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: tripKeys.saved() });
+    },
+  });
+}
+
+// Join a trip's group chat as a "saved" observer — without committing to the trip
+export function useJoinTripChat() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (tripId: string) => {
+      const { data, error } = await supabase.rpc("join_trip_group_chat", { p_trip_id: tripId });
+      if (error) throw error;
+      if (data?.success === false) throw new Error(data.error ?? "Failed to join chat");
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["chats"] });
+      queryClient.invalidateQueries({ queryKey: tripKeys.saved() });
+      queryClient.invalidateQueries({ queryKey: tripKeys.myTrips() });
     },
   });
 }

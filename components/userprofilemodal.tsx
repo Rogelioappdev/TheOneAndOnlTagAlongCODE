@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   NativeSyntheticEvent,
   NativeScrollEvent,
   StyleSheet,
+  Linking,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -22,6 +23,8 @@ import {
   Heart,
   X,
   MessageCircle,
+  Lock,
+  ArrowUpRight,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useQuery } from '@tanstack/react-query';
@@ -53,6 +56,7 @@ interface Props {
   showConnectButton?: boolean;
   showMessageButton?: boolean;
   isConnected?: boolean;
+  currentUserId?: string | null;
 }
 
 export default function UserProfileModal({
@@ -60,11 +64,21 @@ export default function UserProfileModal({
   onConnect, onMessage,
   showConnectButton = false, showMessageButton = false,
   isConnected = false,
+  currentUserId,
 }: Props) {
   const [photoIndex, setPhotoIndex] = useState(0);
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
   const [showPhotoPreview, setShowPhotoPreview] = useState(false);
   const [previewPhotoIndex, setPreviewPhotoIndex] = useState(0);
+  const [canSeeInstagram, setCanSeeInstagram] = useState(false);
+  const [selfId, setSelfId] = useState<string | null>(null);
+  const [unlockTripName, setUnlockTripName] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSelfId(session?.user?.id ?? null);
+    });
+  }, []);
 
   const { data: profile, isLoading } = useQuery({
     queryKey: ['user-profile-modal', userId],
@@ -81,13 +95,13 @@ export default function UserProfileModal({
     },
   });
 
-  const { data: tripsCount = 0 } = useQuery({
-    queryKey: ['user-trips-count', userId],
+  const { data: savedTripsCount = 0 } = useQuery({
+    queryKey: ['user-saved-trips-count', userId],
     enabled: !!userId && visible,
     staleTime: 60_000,
     queryFn: async () => {
       const { count } = await supabase
-        .from('trip_members')
+        .from('saved_trips')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', userId!);
       return count ?? 0;
@@ -127,6 +141,76 @@ export default function UserProfileModal({
       return (data ?? []).map((row: any) => row.trip).filter(Boolean);
     },
   });
+
+  // Check if current user can see Instagram (matched or on same trip)
+  useEffect(() => {
+    // selfId is fetched from supabase directly so it's always correct even if parent prop is null
+    const viewerId = selfId ?? currentUserId;
+    if (!visible) { setUnlockTripName(null); return; }
+    if (viewerId && userId && viewerId === userId) { setCanSeeInstagram(true); return; }
+    if (!profile?.instagram || !viewerId || !userId) {
+      setCanSeeInstagram(isConnected);
+      return;
+    }
+    if (isConnected) { setCanSeeInstagram(true); return; }
+
+    let cancelled = false;
+    (async () => {
+      const { data: matchData } = await supabase
+        .from('matches')
+        .select('id')
+        .or(`and(user1_id.eq.${viewerId},user2_id.eq.${userId}),and(user1_id.eq.${userId},user2_id.eq.${viewerId})`)
+        .limit(1);
+
+      if (matchData && matchData.length > 0) {
+        if (!cancelled) setCanSeeInstagram(true);
+        return;
+      }
+
+      const { data: myTrips } = await supabase
+        .from('trip_members')
+        .select('trip_id')
+        .eq('user_id', viewerId)
+        .eq('status', 'in');
+
+      const myTripIds = myTrips?.map((t: any) => t.trip_id) ?? [];
+      if (myTripIds.length > 0) {
+        const { data: shared } = await supabase
+          .from('trip_members')
+          .select('trip_id')
+          .eq('user_id', userId)
+          .eq('status', 'in')
+          .in('trip_id', myTripIds)
+          .limit(1);
+        if (shared && shared.length > 0) {
+          if (!cancelled) setCanSeeInstagram(true);
+          return;
+        }
+      }
+
+      // Not connected — find a trip this user is on that viewer hasn't joined, to suggest
+      const { data: theirTrips } = await supabase
+        .from('trip_members')
+        .select('trip_id, trip:trips!trip_id(destination)')
+        .eq('user_id', userId)
+        .eq('status', 'in')
+        .limit(5);
+
+      if (!cancelled) {
+        setCanSeeInstagram(false);
+        const notJoined = (theirTrips ?? []).find(
+          (t: any) => !myTripIds.includes(t.trip_id)
+        );
+        setUnlockTripName(notJoined?.trip?.destination ?? null);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [visible, userId, profile?.instagram, currentUserId, selfId, isConnected]);
+
+  // Use selfId (fetched directly from Supabase) so this is never stale from a null parent prop
+  const isSelf = !!(selfId && userId && selfId === userId);
+  const instagramUnlocked = isSelf || canSeeInstagram;
 
   const selectedTrip = userTrips.find((t: any) => t.id === selectedTripId) ?? null;
 
@@ -310,9 +394,9 @@ export default function UserProfileModal({
                 }}
               >
                 {[
-                  { value: tripsCount, label: 'Trips' },
-                  { value: matchesCount, label: 'Matches' },
-                  { value: (profile.places_visited ?? []).length, label: 'Places' },
+                  { value: savedTripsCount, label: 'Saved Trips' },
+                  { value: matchesCount, label: 'Travel Companions' },
+                  { value: (profile.places_visited ?? []).length, label: 'Places Visited' },
                 ].map((stat, i) => (
                   <View
                     key={i}
@@ -340,7 +424,8 @@ export default function UserProfileModal({
                         fontFamily: 'Outfit-Regular',
                         marginTop: 2,
                         textTransform: 'uppercase',
-                        letterSpacing: 0.8,
+                        letterSpacing: 0.4,
+                        textAlign: 'center',
                       }}
                     >
                       {stat.label}
@@ -362,6 +447,40 @@ export default function UserProfileModal({
                   >
                     {profile.bio}
                   </Text>
+                )}
+
+                {/* Instagram */}
+                {!!profile.instagram && (
+                  instagramUnlocked ? (
+                    <Pressable
+                      onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        Linking.openURL(`https://instagram.com/${profile.instagram}`);
+                      }}
+                      style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 16, padding: 16, gap: 14 }}
+                    >
+                      <Text style={{ fontSize: 24 }}>📸</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10, fontFamily: 'Outfit-SemiBold', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 2 }}>Instagram</Text>
+                        <Text style={{ color: '#fff', fontSize: 16, fontFamily: 'Outfit-SemiBold' }}>@{profile.instagram}</Text>
+                      </View>
+                      <ArrowUpRight size={18} color="rgba(255,255,255,0.35)" strokeWidth={2} />
+                    </Pressable>
+                  ) : (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 16, padding: 16, gap: 14 }}>
+                      <Text style={{ fontSize: 24, opacity: 0.3 }}>📸</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: 'rgba(255,255,255,0.25)', fontSize: 10, fontFamily: 'Outfit-SemiBold', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 2 }}>Instagram</Text>
+                        <Text style={{ color: 'rgba(255,255,255,0.2)', fontSize: 16, fontFamily: 'Outfit-SemiBold', letterSpacing: 4 }}>••••••••</Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.07)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, gap: 5 }}>
+                        <Lock size={11} color="rgba(255,255,255,0.35)" strokeWidth={2} />
+                        <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, fontFamily: 'Outfit-Regular' }} numberOfLines={1}>
+                          {unlockTripName ? `Join ${unlockTripName}` : 'Match to unlock'}
+                        </Text>
+                      </View>
+                    </View>
+                  )
                 )}
 
                 {/* Travel DNA */}

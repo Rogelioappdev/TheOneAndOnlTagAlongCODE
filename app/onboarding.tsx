@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, Pressable, Dimensions, TextInput, ScrollView,
   Image, ActivityIndicator, Alert, Platform, KeyboardAvoidingView,
-  Keyboard, StyleSheet,
+  Keyboard, StyleSheet, Linking,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -11,7 +11,7 @@ import Svg, { Path } from 'react-native-svg';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import {
   MapPin, Camera as CameraIcon, Check, X, Lock,
-  Shield, Plane,
+  Shield, Plane, ChevronDown,
 } from 'lucide-react-native';
 import OnboardingIntroSlide from '@/components/OnboardingIntroSlide';
 import {
@@ -20,16 +20,22 @@ import {
   savePushTokenToDatabase, supabase,
 } from '@/lib/supabase';
 import { uploadFile, getImageMeta } from '@/lib/upload';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import * as WebBrowser from 'expo-web-browser';
 import * as ImagePicker from 'expo-image-picker';
 import Animated, {
   useAnimatedStyle, useSharedValue, withTiming, withSpring,
   withSequence, withRepeat, withDelay, interpolate,
-  FadeIn, FadeInDown, FadeInUp, Easing,
+  FadeIn, FadeInDown, FadeInUp, Easing, runOnJS,
 } from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics';
 import { usePremiumSounds } from '@/lib/usePremiumSounds';
 import { useJoinTagAlongChat } from '@/lib/hooks/useChat';
 WebBrowser.maybeCompleteAuthSession();
+
+// Module-level flag: survives component re-mounts during navigation transitions
+let _onboardingComplete = false;
 
 const { width, height } = Dimensions.get('window');
 const ACCENT = '#F0EBE3';
@@ -44,6 +50,20 @@ const COLLAGE_IMAGES = [
   `${SUPABASE_URL}/storage/v1/object/public/trip-images/beach/${encodeURIComponent('Surf.jpeg')}`,
   `${SUPABASE_URL}/storage/v1/object/public/trip-images/city/${encodeURIComponent('Amsterdamer Stil.jpeg')}`,
 ];
+
+const HERO_DESTINATIONS = [
+  { img: COLLAGE_IMAGES[0], city: 'Capri',     country: 'Italy'       },
+  { img: COLLAGE_IMAGES[1], city: 'Barcelona', country: 'Spain'       },
+  { img: COLLAGE_IMAGES[2], city: 'The Alps',  country: 'Switzerland' },
+  { img: COLLAGE_IMAGES[3], city: 'Bali',      country: 'Indonesia'   },
+  { img: COLLAGE_IMAGES[4], city: 'Malibu',    country: 'California'  },
+  { img: COLLAGE_IMAGES[5], city: 'Amsterdam', country: 'Netherlands' },
+];
+// Which HERO_DESTINATIONS indices the 3 initial row cards map to
+const CARD_IMAGE_INDICES = [1, 3, 5]; // Barcelona, Bali, Amsterdam
+
+const STACK_CARD_H = 216;
+const STACK_CARD_W = width * 0.72;
 
 // ─── Country / city data ───────────────────────────────────────────────────────
 const HOME_COUNTRIES = [
@@ -81,11 +101,61 @@ const HOME_COUNTRIES = [
 
 // ─── Community guidelines ──────────────────────────────────────────────────────
 const GUIDELINES = [
-  { icon: '✈️', title: 'Real trips only', desc: 'No fake listings or misleading plans' },
-  { icon: '🤝', title: 'Respect the crew', desc: 'Treat every traveler how you\'d want to be treated' },
-  { icon: '📸', title: 'Be yourself', desc: 'Use real photos and honest bios' },
-  { icon: '🔒', title: 'Keep it safe', desc: 'Never share personal financials in chats' },
-  { icon: '🌍', title: 'Leave it better', desc: 'Respect local cultures and destinations' },
+  {
+    icon: '✈️',
+    title: 'Real trips only',
+    desc: 'No fake listings or misleading plans',
+    details: [
+      'Only post trips you genuinely intend to take — no "thinking about it" listings.',
+      'Include a real destination and rough dates before inviting others to join.',
+      'If your plans change significantly, update your trip details promptly so your crew isn\'t left guessing.',
+      'Misleading or duplicate trips will be removed and repeat offenders will lose access.',
+    ],
+  },
+  {
+    icon: '🤝',
+    title: 'Respect the crew',
+    desc: 'Treat every traveler how you\'d want to be treated',
+    details: [
+      'Everyone on TagAlong is a real person planning a real adventure — treat them accordingly.',
+      'Zero tolerance for harassment, hate speech, discrimination, or threatening behavior.',
+      'If someone isn\'t the right fit for your trip, decline kindly. Ghosting after joining is not okay.',
+      'Disputes between travelers should be handled respectfully. Use the report button if needed.',
+    ],
+  },
+  {
+    icon: '📸',
+    title: 'Be yourself',
+    desc: 'Use real photos and an honest bio',
+    details: [
+      'Your profile photo must be a real, recent photo of you — no avatars, filters that alter your appearance, or photos of other people.',
+      'Your bio should reflect who you actually are, including your travel style and experience level.',
+      'Misrepresenting yourself to join a trip is a violation and can get your account removed.',
+      'Verified travelers earn a badge shown to the whole community — honesty is rewarded.',
+    ],
+  },
+  {
+    icon: '🔒',
+    title: 'Keep it safe',
+    desc: 'Never share personal financials in chats',
+    details: [
+      'Never share bank details, passwords, payment links, or financial information in any TagAlong chat.',
+      'If someone asks you to send money before you\'ve met in person — that\'s a scam. Report it immediately.',
+      'Meet new travel companions in public places first before committing to shared accommodation.',
+      'Use the in-app report feature if anything feels off. Our team reviews every report.',
+    ],
+  },
+  {
+    icon: '🌍',
+    title: 'Leave it better',
+    desc: 'Respect local cultures and destinations',
+    details: [
+      'Research and follow the local laws, customs, and cultural norms of every destination you visit.',
+      'Tread lightly — minimize your environmental footprint and avoid activities that harm wildlife or ecosystems.',
+      'Support local economies: choose local restaurants, guides, and accommodations over big chains when you can.',
+      'Leave every place as good — or better — than you found it. That\'s the TagAlong standard.',
+    ],
+  },
 ];
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -127,67 +197,6 @@ const GoogleLogo = () => (
     />
   </Svg>
 );
-
-// ─── Animated decorative elements ─────────────────────────────────────────────
-
-/** Pulsing ring — same pattern as OnboardingIntroSlide CrewScene */
-function PulsingRing({ size = 120, delay = 0 }: { size?: number; delay?: number }) {
-  const pulse = useSharedValue(1);
-  useEffect(() => {
-    pulse.value = withDelay(delay, withRepeat(
-      withSequence(
-        withTiming(1.18, { duration: 900, easing: Easing.inOut(Easing.ease) }),
-        withTiming(1, { duration: 900, easing: Easing.inOut(Easing.ease) }),
-      ),
-      -1, false,
-    ));
-  }, []);
-  const style = useAnimatedStyle(() => ({
-    transform: [{ scale: pulse.value }],
-    opacity: interpolate(pulse.value, [1, 1.18], [0.08, 0.22]),
-  }));
-  return (
-    <Animated.View style={[{
-      position: 'absolute',
-      width: size,
-      height: size,
-      borderRadius: size / 2,
-      backgroundColor: ACCENT,
-    }, style]} />
-  );
-}
-
-/** Floating orb — subtle glass circle that drifts */
-function FloatingOrb({ size = 48, dx = 0, dy = 0, delay = 0 }: { size?: number; dx?: number; dy?: number; delay?: number }) {
-  const float = useSharedValue(0);
-  useEffect(() => {
-    float.value = withDelay(delay, withRepeat(
-      withSequence(
-        withTiming(1, { duration: 2400, easing: Easing.inOut(Easing.sin) }),
-        withTiming(0, { duration: 2400, easing: Easing.inOut(Easing.sin) }),
-      ),
-      -1, false,
-    ));
-  }, []);
-  const style = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: dx + interpolate(float.value, [0, 1], [0, 8]) },
-      { translateY: dy + interpolate(float.value, [0, 1], [0, -12]) },
-    ],
-    opacity: interpolate(float.value, [0, 0.5, 1], [0.4, 0.7, 0.4]),
-  }));
-  return (
-    <Animated.View style={[{
-      position: 'absolute',
-      width: size,
-      height: size,
-      borderRadius: size / 2,
-      backgroundColor: 'rgba(240,235,227,0.06)',
-      borderWidth: 1,
-      borderColor: 'rgba(240,235,227,0.12)',
-    }, style]} />
-  );
-}
 
 /** Progress dots — matching OnboardingIntroSlide dot style */
 function ProgressDots({ current, total }: { current: number; total: number }) {
@@ -306,6 +315,100 @@ export default function OnboardingScreen() {
     planningStyle: null, experience: null,
     verified: false, profilePhotos: [],
   });
+
+  // ── Sign-in email form scroll (slide 1) ──────────────────────────────────
+  const signInScrollRef = useRef<ScrollView>(null);
+  const openEmailForm = () => {
+    setShowEmailForm(true);
+    setTimeout(() => signInScrollRef.current?.scrollToEnd({ animated: true }), 100);
+  };
+
+  // ── Guidelines expanded state (slide 4) ──────────────────────────────────
+  const [expandedGuideline, setExpandedGuideline] = useState<number | null>(null);
+
+  // ── Destination card stack (slide 2) ──────────────────────────────────────
+  const [stackMode, setStackMode] = useState(false);
+  const [topIdx, setTopIdx] = useState(0);
+
+  const rowOpSV     = useSharedValue(1);
+  const stackOpSV   = useSharedValue(0);
+  const posP        = useSharedValue(0); // 0→1: back/mid settle on initial stack entry
+  const swipeX      = useSharedValue(0);
+  const swipeR      = useSharedValue(0);
+  const topCardOpSV = useSharedValue(1);
+  const canSwipeV   = useSharedValue(0); // 1 = swiping enabled
+
+  const rowWrapStyle   = useAnimatedStyle(() => ({ opacity: rowOpSV.value }));
+  const stackWrapStyle = useAnimatedStyle(() => ({ opacity: stackOpSV.value }));
+
+  const backCardStyle = useAnimatedStyle(() => ({
+    top:  interpolate(posP.value, [0, 1], [18, 12]),
+    left: interpolate(posP.value, [0, 1], [-20, -8]),
+    transform: [
+      { rotate: `${interpolate(posP.value, [0, 1], [-7, -3])}deg` },
+      { scale:   interpolate(posP.value, [0, 1], [0.87, 0.945]) },
+    ],
+  }));
+
+  const midCardStyle = useAnimatedStyle(() => ({
+    top:  interpolate(posP.value, [0, 1], [9, 6]),
+    left: interpolate(posP.value, [0, 1], [-10, -4]),
+    transform: [
+      { rotate: `${interpolate(posP.value, [0, 1], [-3.5, -1.5])}deg` },
+      { scale:   interpolate(posP.value, [0, 1], [0.93, 0.97]) },
+    ],
+  }));
+
+  const topCardStyle = useAnimatedStyle(() => ({
+    opacity: topCardOpSV.value,
+    transform: [{ translateX: swipeX.value }, { rotate: `${swipeR.value}deg` }],
+  }));
+
+  const enterStack = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    rowOpSV.value   = withTiming(0, { duration: 200 });
+    stackOpSV.value = withDelay(80, withTiming(1, { duration: 250 }));
+    posP.value      = withDelay(100, withSpring(1, { damping: 18, stiffness: 100 }));
+    setTimeout(() => {
+      setStackMode(true);
+      canSwipeV.value = 1;
+    }, 180);
+  };
+
+  const onCardSwiped = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    canSwipeV.value = 0;
+    setTimeout(() => {
+      topCardOpSV.value = 0;
+      swipeX.value      = 0;
+      swipeR.value      = 0;
+      setTopIdx(prev => (prev + 1) % HERO_DESTINATIONS.length);
+      setTimeout(() => {
+        topCardOpSV.value = withTiming(1, { duration: 180 });
+        canSwipeV.value   = 1;
+      }, 60);
+    }, 360);
+  }, []);
+
+  const pan = Gesture.Pan()
+    .onUpdate((e) => {
+      if (canSwipeV.value === 0) return;
+      swipeX.value = e.translationX;
+      swipeR.value = interpolate(e.translationX, [-160, 160], [-14, 14], 'clamp');
+    })
+    .onEnd((e) => {
+      if (canSwipeV.value === 0) return;
+      const past = Math.abs(e.translationX) > width * 0.28 || Math.abs(e.velocityX) > 700;
+      if (past) {
+        const dir = (e.translationX > 0 || e.velocityX > 0) ? 1 : -1;
+        swipeX.value = withTiming(dir * (width + 120), { duration: 380, easing: Easing.in(Easing.quad) });
+        swipeR.value = withTiming(dir * 22, { duration: 380 });
+        runOnJS(onCardSwiped)();
+      } else {
+        swipeX.value = withSpring(0, { damping: 16, stiffness: 200 });
+        swipeR.value = withSpring(0);
+      }
+    });
 
   // ── Hooks ──────────────────────────────────────────────────────────────────
   const { playHeavy, playSoft, playSuccess } = usePremiumSounds();
@@ -541,6 +644,7 @@ export default function OnboardingScreen() {
       }
 
       await new Promise(resolve => setTimeout(resolve, 1800));
+      _onboardingComplete = true;
       router.replace('/(tabs)');
     } catch (error) {
       console.error('Error completing onboarding:', error);
@@ -550,17 +654,16 @@ export default function OnboardingScreen() {
   };
 
   // ══════════════════════════════════════════════════════════════════════════════
+  // ── Guard: if navigation is already underway, render nothing
+  // ══════════════════════════════════════════════════════════════════════════════
+  if (_onboardingComplete) return <View style={{ flex: 1, backgroundColor: '#000' }} />;
+
+  // ══════════════════════════════════════════════════════════════════════════════
   // ── Loading overlay ────────────────────────────────────────────────────────
   // ══════════════════════════════════════════════════════════════════════════════
   if (isCompletingOnboarding) {
     return (
       <View style={{ flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' }}>
-        {/* Animated background orbs */}
-        <PulsingRing size={200} delay={0} />
-        <PulsingRing size={140} delay={400} />
-        <FloatingOrb size={60} dx={-90} dy={-120} delay={200} />
-        <FloatingOrb size={40} dx={100} dy={-80} delay={600} />
-        <FloatingOrb size={32} dx={-60} dy={100} delay={400} />
 
         <Animated.View entering={FadeIn.duration(400)} style={{ alignItems: 'center', paddingHorizontal: 40, zIndex: 10 }}>
           <Animated.View entering={FadeIn.delay(100).duration(500)}>
@@ -572,13 +675,13 @@ export default function OnboardingScreen() {
             entering={FadeInUp.delay(200).springify()}
             style={{ color: '#fff', fontSize: 30, fontWeight: '800', fontFamily: 'Outfit-ExtraBold', marginTop: 32, letterSpacing: -0.5, textAlign: 'center' }}
           >
-            Getting ready{'\n'}for takeoff
+            Profile{'\n'}complete.
           </Animated.Text>
           <Animated.Text
             entering={FadeInUp.delay(350).springify()}
             style={{ color: 'rgba(255,255,255,0.45)', fontSize: 15, fontFamily: 'Outfit-Regular', textAlign: 'center', lineHeight: 22, marginTop: 10 }}
           >
-            Setting up your travel profile...
+            Time to find the trip of your lifetime.
           </Animated.Text>
         </Animated.View>
       </View>
@@ -616,14 +719,6 @@ export default function OnboardingScreen() {
     return (
       <View style={{ flex: 1, backgroundColor: '#000' }}>
         <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
-          {/* Decorative elements */}
-          <View style={{ position: 'absolute', top: height * 0.15, alignSelf: 'center' }}>
-            <PulsingRing size={180} delay={0} />
-          </View>
-          <FloatingOrb size={56} dx={-width * 0.35} dy={height * 0.12} delay={300} />
-          <FloatingOrb size={36} dx={width * 0.3} dy={height * 0.08} delay={700} />
-          <FloatingOrb size={44} dx={width * 0.25} dy={height * 0.65} delay={500} />
-          <FloatingOrb size={28} dx={-width * 0.28} dy={height * 0.7} delay={900} />
 
           <View style={{ flex: 1, justifyContent: 'space-between', paddingHorizontal: 28 }}>
 
@@ -717,19 +812,20 @@ export default function OnboardingScreen() {
   // ── SLIDE 1: Sign In ──────────────────────────────────────────────────────
   // ══════════════════════════════════════════════════════════════════════════════
   if (currentSlide === 1) {
+
     return (
       <View style={{ flex: 1, backgroundColor: '#000' }}>
         <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
-          {/* Decorative */}
-          <View style={{ position: 'absolute', top: height * 0.22, alignSelf: 'center' }}>
-            <PulsingRing size={160} delay={200} />
-          </View>
-          <FloatingOrb size={50} dx={-width * 0.32} dy={height * 0.18} delay={100} />
-          <FloatingOrb size={38} dx={width * 0.28} dy={height * 0.14} delay={500} />
-          <FloatingOrb size={32} dx={width * 0.15} dy={height * 0.55} delay={800} />
 
           <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-            <View style={{ flex: 1, justifyContent: 'space-between', paddingHorizontal: 28 }}>
+            <ScrollView
+              ref={signInScrollRef}
+              style={{ flex: 1 }}
+              contentContainerStyle={{ flexGrow: 1, justifyContent: 'space-between', paddingHorizontal: 28 }}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              bounces={false}
+            >
 
               {/* Top row */}
               <Animated.View entering={FadeIn.delay(100).duration(600)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 8 }}>
@@ -876,7 +972,7 @@ export default function OnboardingScreen() {
                     </Pressable>
                   </View>
                 ) : (
-                  <Pressable onPress={() => setShowEmailForm(true)} style={{ alignItems: 'center' }}>
+                  <Pressable onPress={openEmailForm} style={{ alignItems: 'center' }}>
                     <Text style={{ color: 'rgba(255,255,255,0.28)', fontSize: 12, fontFamily: 'Outfit-Regular', textDecorationLine: 'underline' }}>
                       Sign in with email
                     </Text>
@@ -884,7 +980,7 @@ export default function OnboardingScreen() {
                 )}
               </Animated.View>
 
-            </View>
+            </ScrollView>
           </KeyboardAvoidingView>
         </SafeAreaView>
       </View>
@@ -898,124 +994,27 @@ export default function OnboardingScreen() {
     const ageOk = data.birthday && calculateAge(data.birthday) >= 16;
     const ageTooYoung = data.birthday && calculateAge(data.birthday) < 16;
 
-    // Collage circle positions — honeycomb pattern matching the reference
-    const CIRCLE_SIZE = width * 0.27;
-    const GAP = 8;
-    const collageW = CIRCLE_SIZE * 3 + GAP * 2;
-    const rowOffset = CIRCLE_SIZE * 0.5 + GAP * 0.5;
-
     return (
       <View style={{ flex: 1, backgroundColor: '#000' }}>
         <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
           <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-            <ScrollView
-              style={{ flex: 1 }}
-              contentContainerStyle={{ flexGrow: 1 }}
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-              bounces={false}
-            >
-              {/* ── Top half: title + photo collage ──────────────────────── */}
-              <View style={{ paddingHorizontal: 28, paddingTop: 12 }}>
-                <Animated.View entering={FadeIn.delay(80).duration(500)} style={{ marginBottom: 4 }}>
-                  <ProgressDots current={0} total={3} />
-                </Animated.View>
+            <View style={{ flex: 1, paddingHorizontal: 28 }}>
 
-                <Animated.View entering={FadeInDown.delay(150).springify()} style={{ marginTop: 12, marginBottom: 20 }}>
-                  <Text style={os.slideTitle}>basic info</Text>
-                  <Text style={os.slideSub}>let's get started with your profile</Text>
-                </Animated.View>
-              </View>
-
-              {/* Photo collage — 6 circles in honeycomb layout */}
-              <Animated.View entering={FadeIn.delay(250).duration(600)} style={{ alignItems: 'center', marginBottom: 24 }}>
-                <View style={{ width: collageW, height: CIRCLE_SIZE * 2.6 }}>
-                  {/* Row 1 — 3 circles */}
-                  {[0, 1, 2].map(i => (
-                    <Animated.View
-                      key={`r1-${i}`}
-                      entering={FadeInDown.delay(300 + i * 100).springify()}
-                      style={{
-                        position: 'absolute',
-                        left: i * (CIRCLE_SIZE + GAP),
-                        top: 0,
-                        width: CIRCLE_SIZE,
-                        height: CIRCLE_SIZE,
-                        borderRadius: CIRCLE_SIZE / 2,
-                        overflow: 'hidden',
-                        borderWidth: 2,
-                        borderColor: 'rgba(240,235,227,0.2)',
-                      }}
-                    >
-                      <Image
-                        source={{ uri: COLLAGE_IMAGES[i] }}
-                        style={{ width: '100%', height: '100%' }}
-                        resizeMode="cover"
-                      />
-                    </Animated.View>
-                  ))}
-                  {/* Row 2 — 2 circles offset */}
-                  {[0, 1].map(i => (
-                    <Animated.View
-                      key={`r2-${i}`}
-                      entering={FadeInDown.delay(600 + i * 100).springify()}
-                      style={{
-                        position: 'absolute',
-                        left: rowOffset + i * (CIRCLE_SIZE + GAP),
-                        top: CIRCLE_SIZE * 0.82,
-                        width: CIRCLE_SIZE,
-                        height: CIRCLE_SIZE,
-                        borderRadius: CIRCLE_SIZE / 2,
-                        overflow: 'hidden',
-                        borderWidth: 2,
-                        borderColor: 'rgba(240,235,227,0.2)',
-                      }}
-                    >
-                      <Image
-                        source={{ uri: COLLAGE_IMAGES[3 + i] }}
-                        style={{ width: '100%', height: '100%' }}
-                        resizeMode="cover"
-                      />
-                    </Animated.View>
-                  ))}
-                  {/* Row 3 — 1 circle centered */}
-                  <Animated.View
-                    entering={FadeInDown.delay(800).springify()}
-                    style={{
-                      position: 'absolute',
-                      left: (collageW - CIRCLE_SIZE) / 2,
-                      top: CIRCLE_SIZE * 1.64,
-                      width: CIRCLE_SIZE,
-                      height: CIRCLE_SIZE,
-                      borderRadius: CIRCLE_SIZE / 2,
-                      overflow: 'hidden',
-                      borderWidth: 2,
-                      borderColor: 'rgba(240,235,227,0.2)',
-                    }}
-                  >
-                    <Image
-                      source={{ uri: COLLAGE_IMAGES[5] }}
-                      style={{ width: '100%', height: '100%' }}
-                      resizeMode="cover"
-                    />
-                  </Animated.View>
-                </View>
+              {/* Progress dots */}
+              <Animated.View entering={FadeIn.delay(80).duration(500)} style={{ paddingTop: 12, marginBottom: 4 }}>
+                <ProgressDots current={0} total={3} />
               </Animated.View>
 
-              {/* ── Bottom half: form card ────────────────────────────────── */}
+              {/* Title */}
+              <Animated.View entering={FadeInDown.delay(150).springify()} style={{ marginTop: 12, marginBottom: 0 }}>
+                <Text style={os.slideTitle}>basic info</Text>
+                <Text style={os.slideSub}>let's get started with your profile</Text>
+              </Animated.View>
+
+              {/* ── Centered form ─────────────────────────────────────────── */}
               <Animated.View
-                entering={FadeInUp.delay(400).springify()}
-                style={{
-                  backgroundColor: '#0A0A0A',
-                  borderTopLeftRadius: 28,
-                  borderTopRightRadius: 28,
-                  borderWidth: 1,
-                  borderBottomWidth: 0,
-                  borderColor: 'rgba(240,235,227,0.1)',
-                  paddingHorizontal: 24,
-                  paddingTop: 28,
-                  paddingBottom: 24,
-                }}
+                entering={FadeInUp.delay(250).springify()}
+                style={{ flex: 1, justifyContent: 'center' }}
               >
                 {/* Name field */}
                 <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700', fontFamily: 'Outfit-Bold', marginBottom: 10 }}>
@@ -1106,7 +1105,8 @@ export default function OnboardingScreen() {
                   />
                 </View>
               </Animated.View>
-            </ScrollView>
+
+            </View>
           </KeyboardAvoidingView>
         </SafeAreaView>
 
@@ -1173,9 +1173,6 @@ export default function OnboardingScreen() {
     return (
       <View style={{ flex: 1, backgroundColor: '#000' }}>
         <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
-          {/* Decorative */}
-          <FloatingOrb size={48} dx={-width * 0.34} dy={height * 0.06} delay={0} />
-          <FloatingOrb size={32} dx={width * 0.3} dy={height * 0.04} delay={400} />
 
           <View style={{ flex: 1, paddingHorizontal: 28 }}>
 
@@ -1275,6 +1272,62 @@ export default function OnboardingScreen() {
                   </Animated.View>
                 );
               })}
+
+              {/* Custom entry: use typed city/country if not in the list */}
+              {pickingCity && citySearch.trim().length >= 2 && !filteredCities.some(c => c.toLowerCase() === citySearch.trim().toLowerCase()) && (
+                <Pressable
+                  onPress={() => {
+                    playSoft();
+                    setData(d => ({ ...d, city: citySearch.trim() }));
+                    setCitySearch('');
+                    Keyboard.dismiss();
+                  }}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingVertical: 14,
+                    paddingHorizontal: 16,
+                    borderRadius: 14,
+                    marginBottom: 4,
+                    backgroundColor: 'rgba(240,235,227,0.05)',
+                    borderWidth: 1,
+                    borderColor: 'rgba(240,235,227,0.18)',
+                    borderStyle: 'dashed',
+                  }}
+                >
+                  <Text style={{ flex: 1, color: ACCENT, fontSize: 16, fontFamily: 'Outfit-SemiBold' }}>
+                    Use "{citySearch.trim()}"
+                  </Text>
+                  <Check size={16} color={ACCENT} strokeWidth={2.5} />
+                </Pressable>
+              )}
+              {!pickingCity && countrySearch.trim().length >= 2 && !filteredCountries.some(c => c.name.toLowerCase() === countrySearch.trim().toLowerCase()) && (
+                <Pressable
+                  onPress={() => {
+                    playSoft();
+                    setData(d => ({ ...d, country: countrySearch.trim(), city: '' }));
+                    setCountrySearch('');
+                    Keyboard.dismiss();
+                  }}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingVertical: 14,
+                    paddingHorizontal: 16,
+                    borderRadius: 14,
+                    marginBottom: 4,
+                    backgroundColor: 'rgba(240,235,227,0.05)',
+                    borderWidth: 1,
+                    borderColor: 'rgba(240,235,227,0.18)',
+                    borderStyle: 'dashed',
+                  }}
+                >
+                  <Text style={{ flex: 1, color: ACCENT, fontSize: 16, fontFamily: 'Outfit-SemiBold' }}>
+                    Use "{countrySearch.trim()}"
+                  </Text>
+                  <Check size={16} color={ACCENT} strokeWidth={2.5} />
+                </Pressable>
+              )}
             </ScrollView>
 
           </View>
@@ -1305,17 +1358,15 @@ export default function OnboardingScreen() {
     return (
       <View style={{ flex: 1, backgroundColor: '#000' }}>
         <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
-          {/* Decorative */}
-          <View style={{ position: 'absolute', top: height * 0.04, alignSelf: 'center' }}>
-            <PulsingRing size={100} delay={0} />
-          </View>
-          <FloatingOrb size={36} dx={-width * 0.35} dy={height * 0.25} delay={300} />
-          <FloatingOrb size={28} dx={width * 0.32} dy={height * 0.3} delay={700} />
 
-          <View style={{ flex: 1, justifyContent: 'space-between', paddingHorizontal: 28 }}>
-
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={{ paddingHorizontal: 28, paddingBottom: 120 }}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
             {/* Top */}
-            <Animated.View entering={FadeIn.delay(80).duration(500)} style={{ paddingTop: 8, alignItems: 'center' }}>
+            <Animated.View entering={FadeIn.delay(80).duration(500)} style={{ paddingTop: 8, alignItems: 'center', marginBottom: 24 }}>
               <Animated.View entering={FadeInDown.delay(150).springify()} style={{ marginBottom: 16 }}>
                 <GlassIcon size={56}>
                   <Shield size={26} color={ACCENT} strokeWidth={1.5} />
@@ -1330,46 +1381,91 @@ export default function OnboardingScreen() {
             </Animated.View>
 
             {/* Guidelines list */}
-            <View style={{ gap: 10 }}>
-              {GUIDELINES.map((g, idx) => (
-                <Animated.View key={g.title} entering={FadeInUp.delay(idx * 60 + 200).springify()}>
-                  <View style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    backgroundColor: 'rgba(255,255,255,0.04)',
-                    borderRadius: 16,
-                    padding: 16,
-                    borderWidth: 1,
-                    borderColor: 'rgba(240,235,227,0.08)',
-                    gap: 14,
-                  }}>
-                    <View style={{
-                      width: 40, height: 40, borderRadius: 20,
-                      backgroundColor: 'rgba(240,235,227,0.08)',
-                      borderWidth: 1,
-                      borderColor: 'rgba(240,235,227,0.15)',
-                      alignItems: 'center', justifyContent: 'center',
-                    }}>
-                      <Text style={{ fontSize: 18 }}>{g.icon}</Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700', fontFamily: 'Outfit-Bold', marginBottom: 2 }}>
-                        {g.title}
-                      </Text>
-                      <Text style={{ color: 'rgba(255,255,255,0.42)', fontSize: 13, fontFamily: 'Outfit-Regular' }}>
-                        {g.desc}
-                      </Text>
-                    </View>
-                  </View>
-                </Animated.View>
-              ))}
-            </View>
+            <View style={{ gap: 8 }}>
+              {GUIDELINES.map((g, idx) => {
+                const isOpen = expandedGuideline === idx;
+                return (
+                  <Animated.View key={g.title} entering={FadeInUp.delay(idx * 60 + 200).springify()}>
+                    <Pressable
+                      onPress={() => {
+                        playSoft();
+                        setExpandedGuideline(isOpen ? null : idx);
+                      }}
+                      style={{
+                        backgroundColor: isOpen ? 'rgba(240,235,227,0.07)' : 'rgba(255,255,255,0.04)',
+                        borderRadius: 16,
+                        padding: 16,
+                        borderWidth: 1,
+                        borderColor: isOpen ? 'rgba(240,235,227,0.2)' : 'rgba(240,235,227,0.08)',
+                      }}
+                    >
+                      {/* Row header */}
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+                        <View style={{
+                          width: 38, height: 38, borderRadius: 19,
+                          backgroundColor: 'rgba(240,235,227,0.08)',
+                          borderWidth: 1,
+                          borderColor: 'rgba(240,235,227,0.15)',
+                          alignItems: 'center', justifyContent: 'center',
+                          flexShrink: 0,
+                        }}>
+                          <Text style={{ fontSize: 17 }}>{g.icon}</Text>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700', fontFamily: 'Outfit-Bold', marginBottom: 1 }}>
+                            {g.title}
+                          </Text>
+                          {!isOpen && (
+                            <Text style={{ color: 'rgba(255,255,255,0.38)', fontSize: 12, fontFamily: 'Outfit-Regular' }}>
+                              {g.desc}
+                            </Text>
+                          )}
+                        </View>
+                        <Animated.View style={{ transform: [{ rotate: isOpen ? '180deg' : '0deg' }] }}>
+                          <ChevronDown size={18} color={isOpen ? ACCENT : 'rgba(255,255,255,0.3)'} strokeWidth={2} />
+                        </Animated.View>
+                      </View>
 
-            {/* Agree + CTA */}
-            <Animated.View entering={FadeInUp.delay(600).springify()} style={{ paddingBottom: 8 }}>
+                      {/* Expanded detail bullets */}
+                      {isOpen && (
+                        <Animated.View entering={FadeIn.duration(200)} style={{ marginTop: 14, gap: 10 }}>
+                          {g.details.map((line, li) => (
+                            <View key={li} style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
+                              <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: ACCENT, marginTop: 6, flexShrink: 0 }} />
+                              <Text style={{ flex: 1, color: 'rgba(255,255,255,0.7)', fontSize: 13, fontFamily: 'Outfit-Regular', lineHeight: 19 }}>
+                                {line}
+                              </Text>
+                            </View>
+                          ))}
+                        </Animated.View>
+                      )}
+                    </Pressable>
+                  </Animated.View>
+                );
+              })}
+            </View>
+          </ScrollView>
+
+          {/* Agree + CTA — fixed above safe area */}
+          <Animated.View
+            entering={FadeInUp.delay(600).springify()}
+            style={{
+              position: 'absolute',
+              bottom: insets.bottom + 16,
+              left: 28,
+              right: 28,
+            }}
+          >
+            <View style={{
+              backgroundColor: 'rgba(0,0,0,0.85)',
+              borderRadius: 20,
+              padding: 16,
+              borderWidth: 1,
+              borderColor: 'rgba(240,235,227,0.08)',
+            }}>
               <Pressable
                 onPress={() => { setGuidelinesAccepted(a => !a); playSoft(); }}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 }}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 }}
               >
                 <View style={{
                   width: 24, height: 24, borderRadius: 7,
@@ -1384,15 +1480,13 @@ export default function OnboardingScreen() {
                   I agree to the TagAlong community guidelines
                 </Text>
               </Pressable>
-
               <CTAButton
                 label="I'm In"
                 onPress={handleContinue}
                 disabled={!canContinue()}
               />
-            </Animated.View>
-
-          </View>
+            </View>
+          </Animated.View>
         </SafeAreaView>
       </View>
     );
@@ -1529,12 +1623,11 @@ export default function OnboardingScreen() {
 // ─── Shared styles ───────────────────────────────────────────────────────────
 const os = StyleSheet.create({
   wordmark: {
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 13,
-    fontWeight: '700',
-    fontFamily: 'Outfit-Bold',
-    letterSpacing: 3,
-    textTransform: 'uppercase',
+    color: '#fff',
+    fontSize: 28,
+    fontWeight: '800',
+    fontFamily: 'Outfit-ExtraBold',
+    letterSpacing: -0.5,
   },
   title: {
     color: '#fff',

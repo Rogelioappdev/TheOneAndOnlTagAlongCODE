@@ -3,7 +3,7 @@ import { Colors } from '../../lib/theme';
 import { View, Text, Pressable, Dimensions, Image, ScrollView, Modal, TextInput, Alert } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Plane, MapPin, Calendar, Languages, X, ChevronLeft, ChevronDown, Briefcase, MessageCircle, Check, HelpCircle, XCircle, Plus, Minus, Search, Clock, DollarSign, ChevronRight, RotateCcw, Send } from 'lucide-react-native';
+import { Plane, MapPin, Calendar, Languages, X, ChevronLeft, ChevronDown, Briefcase, MessageCircle, Check, HelpCircle, XCircle, Plus, Minus, Search, Clock, DollarSign, ChevronRight, RotateCcw, Send, Bookmark } from 'lucide-react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -36,7 +36,7 @@ import { calculateTripMatch } from '@/lib/matching';
 import TripJoinAnimation from '@/components/TripJoinAnimation';
 import SwipeLimitGate from '@/components/SwipeLimitGate';
 import PremiumPaywall from '@/components/PremiumPaywall';
-import { useTrips as useSupabaseTrips, useCreateTrip, useJoinTrip } from '@/lib/hooks/useTrips';
+import { useTrips as useSupabaseTrips, useCreateTrip, useJoinTrip, useSaveTrip } from '@/lib/hooks/useTrips';
 import { useCreateDirectConversation } from '@/lib/hooks/useChat';
 import { getCurrentUserId, supabase } from '@/lib/supabase';
 import TripMembersSection from '@/components/TripMembersSection';
@@ -597,8 +597,8 @@ const SwipeCard = memo(function SwipeCard({
 
 // ─── Profile completion nudge card ────────────────────────────────────────────
 // Shown in the feed after PROFILE_NUDGE_AT swipes; not swipeable — intentional
-// tap targets only so the CTA is deliberate. Gated by hasSeenProfileNudge so it
-// only ever shows once per install.
+// tap targets only so the CTA is deliberate. Resets each app open until the
+// user completes their profile setup (profileSetupCompleted = true).
 interface ProfileCompleteCardProps {
   userProfile: any;
   onComplete: () => void;
@@ -620,59 +620,6 @@ const NUDGE_FIELDS = [
 
 const ACCENT_COLOR = '#F0EBE3';
 
-/** Pulsing ring for the nudge card — matches OnboardingIntroSlide */
-function NudgePulseRing({ size = 120 }: { size?: number }) {
-  const pulse = useSharedValue(1);
-  useEffect(() => {
-    pulse.value = withRepeat(
-      withSequence(
-        withTiming(1.2, { duration: 900, easing: Easing.inOut(Easing.ease) }),
-        withTiming(1, { duration: 900, easing: Easing.inOut(Easing.ease) }),
-      ),
-      -1, false,
-    );
-  }, []);
-  const style = useAnimatedStyle(() => ({
-    transform: [{ scale: pulse.value }],
-    opacity: interpolate(pulse.value, [1, 1.2], [0.06, 0.18]),
-  }));
-  return (
-    <Animated.View style={[{
-      position: 'absolute',
-      width: size, height: size, borderRadius: size / 2,
-      backgroundColor: ACCENT_COLOR,
-    }, style]} />
-  );
-}
-
-/** Floating glass orb for the nudge card */
-function NudgeOrb({ size = 40, dx = 0, dy = 0, delay = 0 }: { size?: number; dx?: number; dy?: number; delay?: number }) {
-  const float = useSharedValue(0);
-  useEffect(() => {
-    float.value = withDelay(delay, withRepeat(
-      withSequence(
-        withTiming(1, { duration: 2600, easing: Easing.inOut(Easing.sin) }),
-        withTiming(0, { duration: 2600, easing: Easing.inOut(Easing.sin) }),
-      ),
-      -1, false,
-    ));
-  }, []);
-  const style = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: dx + interpolate(float.value, [0, 1], [0, 6]) },
-      { translateY: dy + interpolate(float.value, [0, 1], [0, -10]) },
-    ],
-    opacity: interpolate(float.value, [0, 0.5, 1], [0.35, 0.65, 0.35]),
-  }));
-  return (
-    <Animated.View style={[{
-      position: 'absolute',
-      width: size, height: size, borderRadius: size / 2,
-      backgroundColor: 'rgba(240,235,227,0.05)',
-      borderWidth: 1, borderColor: 'rgba(240,235,227,0.1)',
-    }, style]} />
-  );
-}
 
 const ProfileCompleteCard = memo(function ProfileCompleteCard({
   userProfile, onComplete, onDismiss,
@@ -699,16 +646,7 @@ const ProfileCompleteCard = memo(function ProfileCompleteCard({
       overflow: 'hidden',
       backgroundColor: '#000',
     }}>
-      {/* Animated background elements */}
-      <View style={{ position: 'absolute', top: '18%', alignSelf: 'center', alignItems: 'center', justifyContent: 'center' }}>
-        <NudgePulseRing size={160} />
-      </View>
-      <NudgeOrb size={44} dx={-width * 0.28} dy={60} delay={200} />
-      <NudgeOrb size={32} dx={width * 0.24} dy={80} delay={600} />
-      <NudgeOrb size={28} dx={-width * 0.15} dy={height * 0.42} delay={400} />
-      <NudgeOrb size={24} dx={width * 0.2} dy={height * 0.38} delay={800} />
-
-      <View style={{ flex: 1, padding: 28, justifyContent: 'space-between', zIndex: 10 }}>
+      <View style={{ flex: 1, padding: 28, justifyContent: 'space-between' }}>
         {/* Header */}
         <View style={{ alignItems: 'center', marginTop: 12 }}>
           <View style={{
@@ -804,7 +742,8 @@ export default function TagAlongScreen() {
   const insets = useSafeAreaInsets();
   const [tripIndex, setTripIndex] = useState(0);
   const [showTripDetail, setShowTripDetail] = useState(false);
-  const [showMyTrips, setShowMyTrips] = useState(false);
+  const [showSavedTrips, setShowSavedTrips] = useState(false);
+  const [savedBadgeCount, setSavedBadgeCount] = useState(0);
   const [showCreateTrip, setShowCreateTrip] = useState(false);
   const [showTripCreatedBanner, setShowTripCreatedBanner] = useState(false);
   const [createdTripDestination, setCreatedTripDestination] = useState('');
@@ -851,7 +790,14 @@ export default function TagAlongScreen() {
   const { data: supabaseTrips = [], refetch: refetchTrips } = useSupabaseTrips();
   const createTripMutation = useCreateTrip();
   const joinTripMutation = useJoinTrip();
+  const saveTripMutation = useSaveTrip();
   const createDirectConversation = useCreateDirectConversation();
+  // When true, the next right-swipe flyoff should join instead of save
+  const pendingJoinRef = useRef(false);
+  // Frozen snapshot of nextTrip captured at swipe-completion time (before
+  // setTripIndex updates nextTrip to trip[N+2]). Used by commit-gap screens
+  // so they always show the trip that is about to become the top card.
+  const frozenNextTripRef = useRef<{ image: string; destination: string; country: string; dates: string } | null>(null);
 
   const isAlreadyJoined = useCallback((tripId: string) => joinedTripsIds.has(tripId), [joinedTripsIds]);
 
@@ -861,13 +807,8 @@ export default function TagAlongScreen() {
   const userPhoto = userProfile?.profilePhotos?.[0] ?? null;
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [isEmailUser, setIsEmailUser] = useState<boolean>(false);
   useEffect(() => {
     getCurrentUserId().then(setCurrentUserId);
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      const provider = session?.user?.app_metadata?.provider;
-      setIsEmailUser(provider === 'email');
-    });
   }, []);
 
   const tripsIn = useMemo(() => joinedTrips.filter(t => t.userStatus === 'in'), [joinedTrips]);
@@ -925,6 +866,8 @@ export default function TagAlongScreen() {
       maxPeople: trip.max_group_size,
       isUserCreated: trip.creator_id === currentUserId,
       isAlreadyJoined: trip.members?.some(m => m.user_id === currentUserId) ?? false,
+      saveCount: trip.save_count ?? 0,
+      isTrending: (trip.save_count ?? 0) >= 5,
     };
   }), [supabaseTrips, currentUserId]);
 
@@ -960,19 +903,16 @@ export default function TagAlongScreen() {
   // +1 = join (right), 0 = idle. Drives the pass/join action screen that
   // fills the card slot during the commit gap (when cardOpacity = 0).
   const overlayDirection = useSharedValue(0);
+  const badgeScale = useSharedValue(0);
 
-  // Profile nudge: shown once after PROFILE_NUDGE_AT swipes
-  const [hasSeenProfileNudge, setHasSeenProfileNudge] = useState(false);
-  useEffect(() => {
-    AsyncStorage.getItem('hasSeenProfileNudge').then(val => {
-      if (val === 'true') setHasSeenProfileNudge(true);
-    });
-  }, []);
+  // Profile nudge: shown after PROFILE_NUDGE_AT swipes, resets each app open
+  // until the user actually completes their profile setup.
+  const profileSetupCompleted = useUserProfileStore(s => s.profileSetupCompleted);
+  const [nudgeDismissedThisSession, setNudgeDismissedThisSession] = useState(false);
   const dismissProfileNudge = useCallback(() => {
-    setHasSeenProfileNudge(true);
-    AsyncStorage.setItem('hasSeenProfileNudge', 'true');
+    setNudgeDismissedThisSession(true);
   }, []);
-  const showProfileNudge = !hasSeenProfileNudge && tripIndex >= PROFILE_NUDGE_AT;
+  const showProfileNudge = !profileSetupCompleted && !nudgeDismissedThisSession && tripIndex >= PROFILE_NUDGE_AT;
 
   // Generation counter incremented on EVERY swipe completion (including
   // rate-limited ones). The useEffect below fires after React commits — this
@@ -1011,11 +951,8 @@ export default function TagAlongScreen() {
     return () => clearTimeout(t);
   }, [swipeGen, cardOpacity]);
 
-  const myTripsCardScale = useSharedValue(1);
-  const myTripsCardStyle = useAnimatedStyle(() => ({ transform: [{ scale: myTripsCardScale.value }] }));
-
   const handleSwipeComplete = useCallback((direction: 'left' | 'right') => {
-    if (!isPremium && !isEmailUser && currentUserId !== null) {
+    if (!isPremium && currentUserId !== null) {
       const allowed = recordSwipe();
       if (!allowed) {
         setShowSwipeLimitGate(true);
@@ -1031,39 +968,26 @@ export default function TagAlongScreen() {
       }
     }
 
+    // Freeze nextTrip NOW — before setTripIndex shifts it to trip[N+2].
+    // The commit-gap screens read this ref so they always show the same
+    // photo as the incoming top card, eliminating the brief wrong-trip flash.
+    frozenNextTripRef.current = nextTrip;
+
     Haptics.impactAsync(direction === 'right' ? Haptics.ImpactFeedbackStyle.Medium : Haptics.ImpactFeedbackStyle.Light);
 
-    if (direction === 'right' && currentTrip && !isAlreadyJoined(currentTrip.id)) {
-      joinTripMutation.mutate({ tripId: currentTrip.id, status: 'in' });
-
-      const tripToJoin = {
-        id: currentTrip.id,
-        destination: currentTrip.destination,
-        country: currentTrip.country,
-        image: currentTrip.image,
-        dates: currentTrip.dates,
-        vibes: currentTrip.vibes,
-        description: currentTrip.description,
-        fullDescription: currentTrip.fullDescription,
-        host: currentTrip.host,
-        budget: currentTrip.budget,
-        accommodation: currentTrip.accommodation,
-        groupSize: currentTrip.groupSize,
-        people: currentTrip.people.map(p => ({
-          ...p,
-          id: `person-${p.name}-${currentTrip.id}`,
-          photos: [],
-          status: 'in' as const,
-        })),
-      };
-      joinTrip(tripToJoin, 'in');
-
-      setJoinedTripName(currentTrip.destination);
-      setJoinedTripCover(currentTrip.image ?? '');
-      setJoinedTripCrew(
-        (currentTrip.people ?? []).slice(0, 4).map((p: any) => p.image).filter(Boolean)
-      );
-      setShowTripJoinAnimation(true);
+    if (direction === 'right' && currentTrip) {
+      if (pendingJoinRef.current) {
+        // Join was already executed synchronously in the button handler — just clear the flag
+        pendingJoinRef.current = false;
+      } else {
+        // Swipe right or Save button — save the trip
+        saveTripMutation.mutate(currentTrip.id);
+        setSavedBadgeCount(prev => prev + 1);
+        badgeScale.value = withSequence(
+          withSpring(1.45, { damping: 5, stiffness: 400 }),
+          withSpring(1, { damping: 8, stiffness: 250 }),
+        );
+      }
     }
 
     // NOTE: transform reset is handled on the UI thread inside the pan gesture's
@@ -1085,7 +1009,7 @@ export default function TagAlongScreen() {
     // where N → N is a no-op re-render), swipeGen still changes and the effect
     // still fires.
     setSwipeGen(n => n + 1);
-  }, [tripIndex, currentTrip, joinTrip, isAlreadyJoined, isPremium, isEmailUser, recordSwipe, translateX, translateY, rotation, cardScale, joinTripMutation]);
+  }, [tripIndex, currentTrip, nextTrip, isPremium, recordSwipe, translateX, translateY, rotation, cardScale, saveTripMutation]);
 
   const handleCardTap = useCallback(() => {
     if (!isGesturing.value) {
@@ -1128,6 +1052,10 @@ export default function TagAlongScreen() {
       }
     });
   }, [stableSwipeComplete, translateX, translateY, rotation, cardOpacity, behindProgress, overlayDirection]);
+
+  const badgeAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: badgeScale.value }],
+  }));
 
   const likeOpacity = useAnimatedStyle(() => ({
     opacity: interpolate(translateX.value, [0, SWIPE_THRESHOLD], [0, 1], 'clamp'),
@@ -1329,6 +1257,26 @@ export default function TagAlongScreen() {
               ))}
             </View>
 
+            {/* Social signals — save count + trending */}
+            {(currentTrip.saveCount > 0 || currentTrip.isTrending) && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingTop: 16 }}>
+                {currentTrip.saveCount > 0 && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#0F0F0F', borderWidth: 0.5, borderColor: 'rgba(255,255,255,0.08)', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 14 }}>
+                    <Bookmark size={14} color="rgba(255,255,255,0.5)" strokeWidth={2} />
+                    <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 13, fontFamily: 'Outfit-SemiBold' }}>
+                      {currentTrip.saveCount} {currentTrip.saveCount === 1 ? 'person' : 'people'} saved this
+                    </Text>
+                  </View>
+                )}
+                {currentTrip.isTrending && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,149,0,0.1)', borderWidth: 0.5, borderColor: 'rgba(255,149,0,0.3)', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 14 }}>
+                    <Text style={{ fontSize: 13 }}>🔥</Text>
+                    <Text style={{ color: '#FF9500', fontSize: 13, fontFamily: 'Outfit-SemiBold' }}>Trending</Text>
+                  </View>
+                )}
+              </View>
+            )}
+
             <View style={{ paddingHorizontal: 16, paddingTop: 26 }}>
 
               <Text style={{ color: '#fff', fontSize: 17, fontWeight: '700', marginBottom: 12, fontFamily: 'Outfit-Bold' }}>
@@ -1410,8 +1358,35 @@ export default function TagAlongScreen() {
             ) : (
               <Pressable
                 onPress={() => {
+                  if (!currentTrip || currentTrip.isAlreadyJoined) return;
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                   setShowTripDetail(false);
+                  joinTripMutation.mutate({ tripId: currentTrip.id, status: 'in' });
+                  joinTrip({
+                    id: currentTrip.id,
+                    destination: currentTrip.destination,
+                    country: currentTrip.country,
+                    image: currentTrip.image,
+                    dates: currentTrip.dates,
+                    vibes: currentTrip.vibes,
+                    description: currentTrip.description,
+                    fullDescription: currentTrip.fullDescription,
+                    host: currentTrip.host,
+                    budget: currentTrip.budget,
+                    accommodation: currentTrip.accommodation,
+                    groupSize: currentTrip.groupSize,
+                    people: (currentTrip.people ?? []).map((p: any) => ({
+                      ...p,
+                      id: `person-${p.name}-${currentTrip.id}`,
+                      photos: [],
+                      status: 'in' as const,
+                    })),
+                  }, 'in');
+                  setJoinedTripName(currentTrip.destination);
+                  setJoinedTripCover(currentTrip.image ?? '');
+                  setJoinedTripCrew((currentTrip.people ?? []).slice(0, 4).map((p: any) => p.image).filter(Boolean));
+                  setShowTripJoinAnimation(true);
+                  pendingJoinRef.current = true;
                   triggerSwipe('right');
                 }}
                 style={({ pressed }) => ({
@@ -1482,14 +1457,14 @@ export default function TagAlongScreen() {
           style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
         />
 
-        {/* JOIN stamp */}
+        {/* SAVE stamp */}
         <Animated.View style={[
           { position: 'absolute', top: 46, left: 18, paddingHorizontal: 10, paddingVertical: 5,
             borderRadius: 8, borderWidth: 2.5, borderColor: COLORS.forestGreen,
             backgroundColor: COLORS.accentDim, transform: [{ rotate: '-14deg' }] },
           likeOpacity,
         ]}>
-          <Text style={{ color: COLORS.forestGreen, fontSize: 18, fontWeight: '900', fontFamily: 'Outfit-ExtraBold' }}>JOIN</Text>
+          <Text style={{ color: COLORS.forestGreen, fontSize: 18, fontWeight: '900', fontFamily: 'Outfit-ExtraBold' }}>SAVE</Text>
         </Animated.View>
 
         {/* PASS stamp */}
@@ -1503,7 +1478,7 @@ export default function TagAlongScreen() {
         </Animated.View>
 
         {/* Top badges */}
-        <View style={{ position: 'absolute', top: 14, left: 14, right: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+        <View style={{ position: 'absolute', top: 14, left: 14, right: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           {/* Match % — glass style */}
           <View style={{
             backgroundColor: 'rgba(0,0,0,0.48)',
@@ -1515,16 +1490,29 @@ export default function TagAlongScreen() {
             <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 12, fontFamily: 'Outfit-Regular' }}>match</Text>
           </View>
 
-          {currentTrip.isAlreadyJoined && (
-            <View style={{
-              flexDirection: 'row', alignItems: 'center', gap: 4,
-              backgroundColor: COLORS.accentDim, borderWidth: 0.5, borderColor: COLORS.accentBorder,
-              paddingHorizontal: 11, paddingVertical: 6, borderRadius: 20,
-            }}>
-              <Text style={{ color: COLORS.forestGreen, fontSize: 12, fontFamily: 'Outfit-Regular' }}>✓</Text>
-              <Text style={{ color: COLORS.forestGreen, fontWeight: '600', fontSize: 12, fontFamily: 'Outfit-SemiBold' }}>Joined</Text>
-            </View>
-          )}
+          {/* Right-side badge stack */}
+          <View style={{ alignItems: 'flex-end', gap: 6 }}>
+            {currentTrip.isAlreadyJoined && (
+              <View style={{
+                flexDirection: 'row', alignItems: 'center', gap: 5,
+                backgroundColor: '#2D6A4F',
+                paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20,
+              }}>
+                <Text style={{ color: '#fff', fontSize: 13 }}>✓</Text>
+                <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13, fontFamily: 'Outfit-Bold' }}>Joined</Text>
+              </View>
+            )}
+            {currentTrip.isTrending && (
+              <View style={{
+                flexDirection: 'row', alignItems: 'center', gap: 5,
+                backgroundColor: 'rgba(255,149,0,0.18)', borderWidth: 1, borderColor: 'rgba(255,149,0,0.45)',
+                paddingHorizontal: 11, paddingVertical: 6, borderRadius: 20,
+              }}>
+                <Text style={{ fontSize: 12 }}>🔥</Text>
+                <Text style={{ color: '#FF9500', fontWeight: '700', fontSize: 12, fontFamily: 'Outfit-Bold' }}>Trending</Text>
+              </View>
+            )}
+          </View>
         </View>
 
         {/* Bottom content — overlaid on gradient */}
@@ -1584,24 +1572,24 @@ export default function TagAlongScreen() {
             ))}
           </View>
 
-          {/* Avatar row with names */}
-          {currentTrip.people.length > 0 && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              {/* Overlapping avatar circles */}
+          {/* Social row: avatars + going + saved */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            {/* Overlapping avatars */}
+            {currentTrip.people.length > 0 && (
               <View style={{ flexDirection: 'row' }}>
                 {currentTrip.people.slice(0, 4).map((person, i) => (
                   <View key={i} style={{
                     marginLeft: i === 0 ? 0 : -9,
-                    width: 30, height: 30, borderRadius: 15,
+                    width: 28, height: 28, borderRadius: 14,
                     borderWidth: 1.5, borderColor: '#000',
                     overflow: 'hidden', backgroundColor: '#1a1a1a',
                   }}>
-                    <Image source={{ uri: person.image }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                    <Image source={{ uri: person.image ?? undefined }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
                   </View>
                 ))}
                 {currentTrip.people.length > 4 && (
                   <View style={{
-                    marginLeft: -9, width: 30, height: 30, borderRadius: 15,
+                    marginLeft: -9, width: 28, height: 28, borderRadius: 14,
                     borderWidth: 1.5, borderColor: '#000',
                     backgroundColor: COLORS.glass,
                     alignItems: 'center', justifyContent: 'center',
@@ -1612,13 +1600,31 @@ export default function TagAlongScreen() {
                   </View>
                 )}
               </View>
+            )}
 
-              {/* Names label */}
-              <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 12, fontFamily: 'Outfit-Regular', flex: 1 }} numberOfLines={1}>
+            {/* Going label */}
+            {currentTrip.people.length > 0 && (
+              <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 12, fontFamily: 'Outfit-Regular', flex: 1 }} numberOfLines={1}>
                 {goingLabel}
               </Text>
-            </View>
-          )}
+            )}
+
+            {/* Save count pill — warm accent, right-aligned */}
+            {currentTrip.saveCount > 0 && (
+              <View style={{
+                flexDirection: 'row', alignItems: 'center', gap: 5,
+                backgroundColor: 'rgba(240,235,227,0.1)',
+                borderWidth: 0.5, borderColor: 'rgba(240,235,227,0.25)',
+                paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20,
+              }}>
+                <Bookmark size={11} color="#F0EBE3" strokeWidth={2} />
+                <Text style={{ color: '#F0EBE3', fontSize: 12, fontFamily: 'Outfit-SemiBold' }}>
+                  {currentTrip.saveCount} saved
+                </Text>
+              </View>
+            )}
+          </View>
+
         </View>
       </View>
     );
@@ -1653,7 +1659,7 @@ export default function TagAlongScreen() {
     <View style={{ flex: 1, backgroundColor: '#000000' }}>
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
 
-        {/* ── Header: TagAlong + Create ── */}
+        {/* ── Header: TagAlong + Saved + Create ── */}
         <View style={{
           flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
           paddingHorizontal: H_PAD, paddingTop: 10, paddingBottom: 12,
@@ -1664,26 +1670,57 @@ export default function TagAlongScreen() {
           }}>
             TagAlong
           </Text>
-          <Pressable
-            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setShowCreateTrip(true); }}
-            style={{
-              flexDirection: 'row', alignItems: 'center', gap: 5,
-              backgroundColor: Colors.accentDim,
-              borderWidth: 0.5, borderColor: Colors.accentBorder,
-              paddingHorizontal: 14, paddingVertical: 9, borderRadius: 100,
-            }}
-          >
-            <Plus size={13} color={Colors.accent} strokeWidth={2.5} />
-            <Text style={{ color: Colors.accent, fontSize: 13, fontWeight: '700', fontFamily: 'Outfit-Bold' }}>Create Trip</Text>
-          </Pressable>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setShowSavedTrips(true);
+                setSavedBadgeCount(0);
+                badgeScale.value = 0;
+              }}
+              style={{
+                width: 38, height: 38, borderRadius: 100,
+                backgroundColor: Colors.accentDim,
+                borderWidth: 0.5, borderColor: Colors.accentBorder,
+                alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <Bookmark size={17} color={Colors.accent} strokeWidth={2.2} />
+              {savedBadgeCount > 0 && (
+                <Animated.View style={[{
+                  position: 'absolute', top: -5, right: -5,
+                  minWidth: 18, height: 18, borderRadius: 9,
+                  backgroundColor: '#FF453A',
+                  alignItems: 'center', justifyContent: 'center',
+                  paddingHorizontal: 4,
+                  borderWidth: 1.5, borderColor: '#000',
+                }, badgeAnimStyle]}>
+                  <Text style={{ color: '#fff', fontSize: 10, fontWeight: '800', fontFamily: 'Outfit-Bold' }}>
+                    {savedBadgeCount > 9 ? '9+' : savedBadgeCount}
+                  </Text>
+                </Animated.View>
+              )}
+            </Pressable>
+            <Pressable
+              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setShowCreateTrip(true); }}
+              style={{
+                flexDirection: 'row', alignItems: 'center', gap: 5,
+                backgroundColor: Colors.accentDim,
+                borderWidth: 0.5, borderColor: Colors.accentBorder,
+                paddingHorizontal: 14, paddingVertical: 9, borderRadius: 100,
+              }}
+            >
+              <Plus size={13} color={Colors.accent} strokeWidth={2.5} />
+              <Text style={{ color: Colors.accent, fontSize: 13, fontWeight: '700', fontFamily: 'Outfit-Bold' }}>Create Trip</Text>
+            </Pressable>
+          </View>
         </View>
 
         {/* ── Card stack ── */}
         <View style={{ paddingHorizontal: H_PAD / 2, backgroundColor: '#000', height: CARD_HEIGHT + 8, zIndex: 1 }}>
-          {/* Action screens — sit at the bottom of the stack so they only show
-              through when both cards are hidden (the commit gap after a swipe).
-              Variant picked by overlayDirection; opacity gated by cardOpacity.
-              pointerEvents="none" so gestures still reach the top card. */}
+          {/* Commit-gap screens — visible only during the ~60ms React swap after
+              a swipe (cardOpacity=0, both cards hidden). Shows PASSED or SAVED
+              feedback so the user knows what action just happened. */}
           <Animated.View
             pointerEvents="none"
             style={[
@@ -1760,19 +1797,19 @@ export default function TagAlongScreen() {
               alignItems: 'center', justifyContent: 'center',
               marginBottom: 18,
             }}>
-              <Check size={52} color={COLORS.forestGreen} strokeWidth={3} />
+              <Bookmark size={52} color={COLORS.forestGreen} strokeWidth={2.5} />
             </View>
             <Text style={{
               color: COLORS.forestGreen, fontSize: 30, fontWeight: '900',
               fontFamily: 'Outfit-ExtraBold', letterSpacing: 3,
             }}>
-              JOINED
+              SAVED
             </Text>
             <Text style={{
               color: 'rgba(255,255,255,0.55)', fontSize: 13,
               fontFamily: 'Outfit-Regular', marginTop: 6, letterSpacing: 0.4,
             }}>
-              Let's go!
+              Added to saved trips
             </Text>
           </Animated.View>
 
@@ -1806,12 +1843,9 @@ export default function TagAlongScreen() {
               <ProfileCompleteCard
                 userProfile={userProfile}
                 onComplete={() => {
-                  dismissProfileNudge();
                   router.push('/(tabs)/profile');
                 }}
-                onDismiss={() => {
-                  dismissProfileNudge();
-                }}
+                onDismiss={dismissProfileNudge}
               />
             </View>
           ) : (
@@ -1833,36 +1867,100 @@ export default function TagAlongScreen() {
           )}
         </View>
 
-        {/* ── My Trips ── */}
-        <View style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 8 }}>
-          <Animated.View style={myTripsCardStyle}>
+        {/* ── Action buttons: Pass / Save / Join ── */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 10, paddingHorizontal: 24, gap: 0 }}>
+          {/* Pass */}
+          <View style={{ alignItems: 'center', gap: 6, flex: 1 }}>
             <Pressable
-              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowMyTrips(true); }}
-              onPressIn={() => { myTripsCardScale.value = withSpring(0.93, { stiffness: 400, damping: 22 }); }}
-              onPressOut={() => { myTripsCardScale.value = withSpring(1, { stiffness: 300, damping: 20 }); }}
-              style={{
-                flexDirection: 'row', alignItems: 'center', gap: 6,
-                backgroundColor: '#ffffff',
-                paddingVertical: 9, paddingHorizontal: 18,
-                borderRadius: 100,
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.15,
-                shadowRadius: 6,
-                elevation: 4,
+              onPress={() => {
+                if (!currentTrip) return;
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                triggerSwipe('left');
               }}
+              style={({ pressed }) => ({
+                width: 58, height: 58, borderRadius: 29,
+                backgroundColor: pressed ? 'rgba(255,69,58,0.2)' : 'rgba(255,69,58,0.1)',
+                borderWidth: 1.5, borderColor: 'rgba(255,69,58,0.4)',
+                alignItems: 'center', justifyContent: 'center',
+              })}
             >
-              <Briefcase size={14} color="#000" strokeWidth={2.2} />
-              <Text style={{ color: '#000', fontSize: 13, fontWeight: '700', fontFamily: 'Outfit-Bold', letterSpacing: -0.2 }}>My Trips</Text>
+              <X size={26} color="#FF453A" strokeWidth={2.5} />
             </Pressable>
-          </Animated.View>
+            <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, fontFamily: 'Outfit-Regular' }}>Pass</Text>
+          </View>
+
+          {/* Save — smaller, secondary action */}
+          <View style={{ alignItems: 'center', gap: 6, flex: 1 }}>
+            <Pressable
+              onPress={() => {
+                if (!currentTrip) return;
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                triggerSwipe('right');
+              }}
+              style={({ pressed }) => ({
+                width: 50, height: 50, borderRadius: 25,
+                backgroundColor: pressed ? Colors.accentDim : 'rgba(240,235,227,0.07)',
+                borderWidth: 1.5, borderColor: Colors.accentBorder,
+                alignItems: 'center', justifyContent: 'center',
+              })}
+            >
+              <Bookmark size={20} color={Colors.accent} strokeWidth={2.2} />
+            </Pressable>
+            <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, fontFamily: 'Outfit-Regular' }}>Save</Text>
+          </View>
+
+          {/* Join — larger, primary action */}
+          <View style={{ alignItems: 'center', gap: 6, flex: 1 }}>
+            <Pressable
+              onPress={() => {
+                if (!currentTrip || currentTrip.isAlreadyJoined) return;
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                joinTripMutation.mutate({ tripId: currentTrip.id, status: 'in' });
+                joinTrip({
+                  id: currentTrip.id,
+                  destination: currentTrip.destination,
+                  country: currentTrip.country,
+                  image: currentTrip.image,
+                  dates: currentTrip.dates,
+                  vibes: currentTrip.vibes,
+                  description: currentTrip.description,
+                  fullDescription: currentTrip.fullDescription,
+                  host: currentTrip.host,
+                  budget: currentTrip.budget,
+                  accommodation: currentTrip.accommodation,
+                  groupSize: currentTrip.groupSize,
+                  people: (currentTrip.people ?? []).map((p: any) => ({
+                    ...p,
+                    id: `person-${p.name}-${currentTrip.id}`,
+                    photos: [],
+                    status: 'in' as const,
+                  })),
+                }, 'in');
+                setJoinedTripName(currentTrip.destination);
+                setJoinedTripCover(currentTrip.image ?? '');
+                setJoinedTripCrew((currentTrip.people ?? []).slice(0, 4).map((p: any) => p.image).filter(Boolean));
+                setShowTripJoinAnimation(true);
+                pendingJoinRef.current = true;
+                triggerSwipe('right');
+              }}
+              style={({ pressed }) => ({
+                width: 66, height: 66, borderRadius: 33,
+                backgroundColor: pressed ? 'rgba(48,209,88,0.3)' : 'rgba(48,209,88,0.14)',
+                borderWidth: 2, borderColor: 'rgba(48,209,88,0.55)',
+                alignItems: 'center', justifyContent: 'center',
+              })}
+            >
+              <Check size={28} color="#30D158" strokeWidth={2.8} />
+            </Pressable>
+            <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, fontFamily: 'Outfit-Regular' }}>Join</Text>
+          </View>
         </View>
 
       </SafeAreaView>
 
       {/* Modals */}
       {renderTripDetailModal()}
-      <MyTripsModal visible={showMyTrips} onClose={() => setShowMyTrips(false)} />
+      <MyTripsModal visible={showSavedTrips} onClose={() => setShowSavedTrips(false)} initialTab="saved" />
       <CreateTripOnboarding
         visible={showCreateTrip}
         onClose={() => {
@@ -1900,8 +1998,6 @@ export default function TagAlongScreen() {
               is_flexible_dates: data.datesTBD,
               start_date: data.startDate ?? null,
               end_date: data.endDate ?? null,
-              age_min: data.ageMin ?? null,
-              age_max: data.ageMax ?? null,
               status: 'planning',
             },
             {
@@ -1929,6 +2025,7 @@ export default function TagAlongScreen() {
         onClose={() => setShowPersonProfile(false)}
         showMessageButton
         onMessage={handleMessageFromTripPersonProfile}
+        currentUserId={currentUserId ?? undefined}
       />
 
       <Modal
@@ -2002,6 +2099,7 @@ export default function TagAlongScreen() {
                               id: `person-${p.name}-${trip.id}`,
                               photos: [],
                               status: 'in' as const,
+                              image: p.image ?? '',
                             })),
                           };
                           joinTrip(tripToJoin, 'in');
@@ -2082,7 +2180,7 @@ export default function TagAlongScreen() {
         coverImage={createdTripCoverImage}
         onComplete={() => {
           setShowTripCreatedBanner(false);
-          setShowMyTrips(true);
+          setShowSavedTrips(true);
         }}
       />
 
@@ -2119,6 +2217,7 @@ export default function TagAlongScreen() {
 
       {showSwipeTutorial && (
         <SwipeTutorialOverlay
+          key={tutorialStep}
           step={tutorialStep}
           onNext={() => {
             if (tutorialStep === 1) {

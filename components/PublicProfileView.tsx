@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { View, Text, Pressable, ScrollView, Image, Modal, Dimensions } from 'react-native';
+import { View, Text, Pressable, ScrollView, Image, Modal, Dimensions, Linking, Alert, ActionSheetIOS, Platform } from 'react-native';
+import { supabase } from '@/lib/supabase';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
@@ -20,9 +21,11 @@ import {
   ChevronRight,
   Lock,
   ArrowUpRight,
+  MoreVertical,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import UserProfileModal from './userprofilemodal';
+import ReportModal from './ReportModal';
 
 const { width, height } = Dimensions.get('window');
 
@@ -127,6 +130,7 @@ interface PublicProfileViewProps {
   showConnectButton?: boolean;
   showMessageButton?: boolean;
   isConnected?: boolean;
+  currentUserId?: string;
   // New props for trip membership gating
   isLimitedView?: boolean;
   onJoinTrip?: () => void;
@@ -135,6 +139,7 @@ interface PublicProfileViewProps {
   // Full profile
   onViewFullProfile?: () => void;
   hideFooter?: boolean;
+  onBlock?: (blockedUserId: string) => void;
 }
 
 export default function PublicProfileView({
@@ -146,15 +151,20 @@ export default function PublicProfileView({
   showConnectButton = true,
   showMessageButton = false,
   isConnected = false,
+  currentUserId,
   isLimitedView = false,
   onJoinTrip,
   tripDestination,
   onViewFullProfile,
   hideFooter = false,
+  onBlock,
 }: PublicProfileViewProps) {
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
   const [showPhotoGallery, setShowPhotoGallery] = useState(false);
   const [showFullProfile, setShowFullProfile] = useState(false);
+  const [canSeeInstagram, setCanSeeInstagram] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportSubmitting, setReportSubmitting] = useState(false);
 
   const handleViewFull = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -165,6 +175,80 @@ export default function PublicProfileView({
     }
   };
 
+  const performBlock = async () => {
+    if (!currentUserId || !profile?.id) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    await supabase.from('user_blocks').upsert({
+      blocker_id: currentUserId,
+      blocked_id: profile.id,
+      created_at: new Date().toISOString(),
+    }, { onConflict: 'blocker_id,blocked_id' });
+    onBlock?.(profile.id);
+    onClose();
+  };
+
+  const handleBlock = () => {
+    if (!profile) return;
+    Alert.alert(
+      `Block ${profile.name}?`,
+      "They won't be able to see your profile or trips.",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Block', style: 'destructive', onPress: performBlock },
+      ]
+    );
+  };
+
+  const handleSubmitReport = async (reason: string) => {
+    if (!currentUserId || !profile?.id) return;
+    setReportSubmitting(true);
+    try {
+      await supabase.from('user_reports').insert({
+        reporter_id: currentUserId,
+        reported_user_id: profile.id,
+        reason,
+        created_at: new Date().toISOString(),
+      });
+      setShowReportModal(false);
+      Alert.alert(
+        'Report submitted',
+        "Thank you. We'll review this. Would you also like to block this user?",
+        [
+          { text: 'Also Block', style: 'destructive', onPress: performBlock },
+          { text: 'Done', style: 'cancel' },
+        ]
+      );
+    } catch {
+      Alert.alert('Error', 'Failed to submit report. Please try again.');
+    } finally {
+      setReportSubmitting(false);
+    }
+  };
+
+  const handleOpenOptions = () => {
+    if (!profile) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ['Cancel', `Report ${profile.name}`, `Block ${profile.name}`],
+          destructiveButtonIndex: 2,
+          cancelButtonIndex: 0,
+        },
+        (index) => {
+          if (index === 1) setShowReportModal(true);
+          if (index === 2) handleBlock();
+        }
+      );
+    } else {
+      Alert.alert(profile.name, 'What would you like to do?', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Report', onPress: () => setShowReportModal(true) },
+        { text: 'Block', style: 'destructive', onPress: handleBlock },
+      ]);
+    }
+  };
+
   // Reset photo index and gallery whenever a new profile is shown
   useEffect(() => {
     if (visible) {
@@ -172,6 +256,59 @@ export default function PublicProfileView({
       setShowPhotoGallery(false);
     }
   }, [visible, profile?.id]);
+
+  // Check if current user is connected (matched or same trip) to gate Instagram
+  useEffect(() => {
+    if (currentUserId && profile?.id && currentUserId === profile.id) { setCanSeeInstagram(true); return; }
+    if (!visible || !profile?.instagram || !currentUserId || !profile.id) {
+      setCanSeeInstagram(isConnected);
+      return;
+    }
+    if (isConnected) { setCanSeeInstagram(true); return; }
+
+    let cancelled = false;
+    (async () => {
+      // Check matches
+      const { data: matchData } = await supabase
+        .from('matches')
+        .select('id')
+        .or(`and(user1_id.eq.${currentUserId},user2_id.eq.${profile.id}),and(user1_id.eq.${profile.id},user2_id.eq.${currentUserId})`)
+        .limit(1);
+
+      if (matchData && matchData.length > 0) {
+        if (!cancelled) setCanSeeInstagram(true);
+        return;
+      }
+
+      // Check shared trip
+      const { data: myTrips } = await supabase
+        .from('trip_members')
+        .select('trip_id')
+        .eq('user_id', currentUserId)
+        .eq('status', 'in');
+
+      const myTripIds = myTrips?.map((t: any) => t.trip_id) ?? [];
+      if (myTripIds.length > 0) {
+        const { data: shared } = await supabase
+          .from('trip_members')
+          .select('trip_id')
+          .eq('user_id', profile.id)
+          .eq('status', 'in')
+          .in('trip_id', myTripIds)
+          .limit(1);
+
+        if (!cancelled) setCanSeeInstagram(!!(shared && shared.length > 0));
+      } else {
+        if (!cancelled) setCanSeeInstagram(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [visible, profile?.id, profile?.instagram, currentUserId, isConnected]);
+
+  // Always unlocked for own profile — computed at render time so it's never stale
+  const isSelf = !!(currentUserId && profile?.id && currentUserId === profile.id);
+  const instagramUnlocked = isSelf || canSeeInstagram;
 
   if (!profile) return null;
 
@@ -295,16 +432,22 @@ export default function PublicProfileView({
             </>
           )}
 
-          {/* Back Button */}
+          {/* Header: back button + options menu */}
           <SafeAreaView style={{ position: 'absolute', top: 0, left: 0, right: 0 }} edges={['top']}>
-            <Pressable
-              onPress={onClose}
-              className="flex-row items-center px-4 py-2"
-            >
-              <View className="bg-black/50 p-2 rounded-full">
-                <ChevronDown size={24} color="#fff" strokeWidth={2} />
-              </View>
-            </Pressable>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8 }}>
+              <Pressable onPress={onClose}>
+                <View className="bg-black/50 p-2 rounded-full">
+                  <ChevronDown size={24} color="#fff" strokeWidth={2} />
+                </View>
+              </Pressable>
+              {!isSelf && !!currentUserId && !!profile.id && (
+                <Pressable onPress={handleOpenOptions}>
+                  <View className="bg-black/50 p-2 rounded-full">
+                    <MoreVertical size={24} color="#fff" strokeWidth={2} />
+                  </View>
+                </Pressable>
+              )}
+            </View>
           </SafeAreaView>
 
           {/* Verified Badge */}
@@ -354,6 +497,40 @@ export default function PublicProfileView({
                   {isLimitedView ? bio.slice(0, 150) + (bio.length > 150 ? '...' : '') : bio}
                 </Text>
               </>
+            )}
+
+            {/* Instagram */}
+            {profile.instagram && !isLimitedView && (
+              <View style={{ marginBottom: 24 }}>
+                {instagramUnlocked ? (
+                  <Pressable
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      Linking.openURL(`https://instagram.com/${profile.instagram}`);
+                    }}
+                    style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 16, padding: 16, gap: 14 }}
+                  >
+                    <Text style={{ fontSize: 24 }}>📸</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11, fontFamily: 'Outfit-Regular', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 2 }}>Instagram</Text>
+                      <Text style={{ color: '#fff', fontSize: 16, fontFamily: 'Outfit-SemiBold' }}>@{profile.instagram}</Text>
+                    </View>
+                    <ArrowUpRight size={18} color="rgba(255,255,255,0.35)" strokeWidth={2} />
+                  </Pressable>
+                ) : (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 16, padding: 16, gap: 14 }}>
+                    <Text style={{ fontSize: 24, opacity: 0.3 }}>📸</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: 'rgba(255,255,255,0.25)', fontSize: 11, fontFamily: 'Outfit-Regular', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 2 }}>Instagram</Text>
+                      <Text style={{ color: 'rgba(255,255,255,0.2)', fontSize: 16, fontFamily: 'Outfit-SemiBold', letterSpacing: 4 }}>••••••••</Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.07)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, gap: 5 }}>
+                      <Lock size={11} color="rgba(255,255,255,0.35)" strokeWidth={2} />
+                      <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, fontFamily: 'Outfit-Regular' }}>Match to unlock</Text>
+                    </View>
+                  </View>
+                )}
+              </View>
             )}
 
             {/* Limited View - Show locked message */}
@@ -625,6 +802,15 @@ export default function PublicProfileView({
           userId={profile?.id ?? null}
           visible={showFullProfile}
           onClose={() => setShowFullProfile(false)}
+        />
+
+        {/* Report sheet */}
+        <ReportModal
+          visible={showReportModal}
+          targetName={profile.name}
+          submitting={reportSubmitting}
+          onClose={() => setShowReportModal(false)}
+          onSubmit={handleSubmitReport}
         />
       </View>
 

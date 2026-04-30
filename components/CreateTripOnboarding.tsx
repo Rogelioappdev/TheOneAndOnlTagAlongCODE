@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  View, Text, Pressable, Modal, ScrollView,
+  View, Text, Pressable, Modal, ScrollView, ActivityIndicator,
   Platform, Dimensions, TextInput, NativeSyntheticEvent, NativeScrollEvent,
 } from 'react-native';
 import { Image } from 'expo-image';
@@ -193,20 +193,40 @@ export default function CreateTripOnboarding({ visible, onClose, onSubmit, isSub
   const [description, setDescription] = useState('');
   const [budget, setBudget]           = useState('');
   const [coverPhotos, setCoverPhotos] = useState<string[]>([]);
+  const [photosLoading, setPhotosLoading] = useState(false);
+  const [showPhotoPreview, setShowPhotoPreview] = useState(false);
 
   // Native date picker state (for start/end date — not season chips)
   const [pickerTarget, setPickerTarget] = useState<'start' | 'end' | null>(null);
   const [tempDate, setTempDate]         = useState<Date>(new Date());
 
-  // Cover photos
+  // Cover photos — fetched async from Supabase storage bucket
   useEffect(() => {
     if (!visible) return;
-    const initial = getTripImageSuggestions('', [], 12);
-    setCoverPhotos(initial); setPhoto(initial[0] ?? '');
+    let cancelled = false;
+    setPhotosLoading(true);
+    getTripImageSuggestions('', [], 12).then(urls => {
+      if (cancelled) return;
+      setCoverPhotos(urls);
+      setPhoto(prev => prev || (urls[0] ?? ''));
+      setPhotosLoading(false);
+    });
+    return () => { cancelled = true; };
   }, [visible]);
+
   useEffect(() => {
-    if (!visible) return;
-    setCoverPhotos(getTripImageSuggestions(destination, vibes, 12));
+    if (!visible || !destination) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      setPhotosLoading(true);
+      getTripImageSuggestions(destination, vibes, 12).then(urls => {
+        if (cancelled) return;
+        setCoverPhotos(urls);
+        if (urls[0]) setPhoto(urls[0]);
+        setPhotosLoading(false);
+      });
+    }, 500);
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [destination, vibes, visible]);
 
   // Reset on close
@@ -296,7 +316,10 @@ export default function CreateTripOnboarding({ visible, onClose, onSubmit, isSub
         >
 
           {/* ── Hero card preview ── */}
-          <View style={{ height: HERO_HEIGHT, overflow: 'hidden' }}>
+          <Pressable
+            style={{ height: HERO_HEIGHT, overflow: 'hidden' }}
+            onPress={() => { if (photo) setShowPhotoPreview(true); }}
+          >
             {photo
               ? <Image source={{ uri: photo }} style={{ width, height: HERO_HEIGHT }} contentFit="cover" />
               : <View style={{ width, height: HERO_HEIGHT, backgroundColor: '#111' }} />
@@ -349,7 +372,14 @@ export default function CreateTripOnboarding({ visible, onClose, onSubmit, isSub
                 </View>
               ) : null}
             </View>
-          </View>
+
+            {/* Tap-to-preview hint — only shown when a photo is selected */}
+            {photo ? (
+              <View style={{ position: 'absolute', top: 14, right: 14, flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(0,0,0,0.52)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 100, borderWidth: 0.5, borderColor: 'rgba(255,255,255,0.18)' }}>
+                <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 11, fontFamily: 'Outfit-SemiBold' }}>Tap to preview</Text>
+              </View>
+            ) : null}
+          </Pressable>
 
           {/* ── Form ── */}
           <View style={{ padding: 20, gap: 28 }}>
@@ -373,20 +403,26 @@ export default function CreateTripOnboarding({ visible, onClose, onSubmit, isSub
             {/* COVER PHOTO */}
             <View>
               <Text style={LABEL}>Cover Photo</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, marginHorizontal: -20 }} contentContainerStyle={{ paddingHorizontal: 20, gap: 10 }}>
-                {coverPhotos.map((url, i) => (
-                  <Pressable key={i} onPress={() => { Haptics.selectionAsync(); setPhoto(url); }}
-                    style={{ width: 110, height: 150, borderRadius: 14, overflow: 'hidden', borderWidth: photo === url ? 2 : 0, borderColor: '#F0EBE3' }}
-                  >
-                    <Image source={{ uri: url }} style={{ width: 110, height: 150 }} contentFit="cover" />
-                    {photo === url && (
-                      <View style={{ position: 'absolute', top: 8, right: 8, backgroundColor: '#F0EBE3', borderRadius: 12, width: 24, height: 24, alignItems: 'center', justifyContent: 'center' }}>
-                        <Text style={{ fontSize: 13 }}>✓</Text>
-                      </View>
-                    )}
-                  </Pressable>
-                ))}
-              </ScrollView>
+              {photosLoading ? (
+                <View style={{ height: 150, alignItems: 'center', justifyContent: 'center' }}>
+                  <ActivityIndicator color="rgba(255,255,255,0.5)" />
+                </View>
+              ) : (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, marginHorizontal: -20 }} contentContainerStyle={{ paddingHorizontal: 20, gap: 10 }}>
+                  {coverPhotos.map((url, i) => (
+                    <Pressable key={i} onPress={() => { Haptics.selectionAsync(); setPhoto(url); }}
+                      style={{ width: 110, height: 150, borderRadius: 14, overflow: 'hidden', borderWidth: photo === url ? 2 : 0, borderColor: '#F0EBE3' }}
+                    >
+                      <Image source={{ uri: url }} style={{ width: 110, height: 150 }} contentFit="cover" />
+                      {photo === url && (
+                        <View style={{ position: 'absolute', top: 8, right: 8, backgroundColor: '#F0EBE3', borderRadius: 12, width: 24, height: 24, alignItems: 'center', justifyContent: 'center' }}>
+                          <Text style={{ fontSize: 13 }}>✓</Text>
+                        </View>
+                      )}
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              )}
             </View>
 
             {/* DATES */}
@@ -666,6 +702,56 @@ export default function CreateTripOnboarding({ visible, onClose, onSubmit, isSub
         )}
 
       </View>
+
+      {/* ── Full-screen card preview ── */}
+      <Modal
+        visible={showPhotoPreview}
+        animationType="fade"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setShowPhotoPreview(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: '#000' }}>
+          <Image source={{ uri: photo }} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} contentFit="cover" />
+          <LinearGradient
+            colors={['transparent', 'transparent', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0.88)', 'rgba(0,0,0,0.97)']}
+            locations={[0, 0.38, 0.60, 0.80, 1]}
+            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+          />
+
+          {/* X button — top left */}
+          <Pressable
+            onPress={() => setShowPhotoPreview(false)}
+            hitSlop={16}
+            style={{ position: 'absolute', top: insets.top + 12, left: 16, width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(0,0,0,0.60)', borderWidth: 0.5, borderColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center' }}
+          >
+            <X size={20} color="#fff" strokeWidth={2.5} />
+          </Pressable>
+
+          {/* "Preview" label — top center */}
+          <View style={{ position: 'absolute', top: insets.top + 20, left: 0, right: 0, alignItems: 'center' }}>
+            <View style={{ backgroundColor: 'rgba(0,0,0,0.52)', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6, borderWidth: 0.5, borderColor: 'rgba(255,255,255,0.15)' }}>
+              <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, fontFamily: 'Outfit-SemiBold', letterSpacing: 0.3 }}>Card Preview</Text>
+            </View>
+          </View>
+
+          {/* Bottom content — mirrors feed card */}
+          <View style={{ position: 'absolute', bottom: insets.bottom + 32, left: 0, right: 0, paddingHorizontal: 16 }}>
+            {destination ? (
+              <>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+                  <MapPin size={11} color="#F0EBE3" strokeWidth={2} />
+                  <Text style={{ color: '#F0EBE3', fontSize: 12, fontFamily: 'Outfit-Regular' }}>{country || '—'}</Text>
+                </View>
+                <Text style={{ color: '#fff', fontSize: 34, fontWeight: '800', letterSpacing: -1.3, lineHeight: 36, fontFamily: 'Outfit-ExtraBold' }}>
+                  {destination}
+                </Text>
+              </>
+            ) : (
+              <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 26, fontFamily: 'Outfit-Bold' }}>Your destination...</Text>
+            )}
+          </View>
+        </View>
+      </Modal>
     </Modal>
   );
 }

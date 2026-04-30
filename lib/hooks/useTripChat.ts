@@ -1,6 +1,5 @@
 import { useEffect } from "react";
   import { useQuery, useMutation, useQueryClient, useInfiniteQuery, InfiniteData } from "@tanstack/react-query";
-  import * as FileSystem from "expo-file-system";
   import { supabase } from "../supabase";
   import type {
     TripChat,
@@ -145,6 +144,7 @@ import { useEffect } from "react";
         content: string;
         type?: "text" | "image" | "system";
         replyToId?: string | null;
+        replyToMessage?: TripMessageWithSender | null;
       }) => {
         const { data: { session } } = await supabase.auth.getSession();
         const user = session?.user;
@@ -167,16 +167,34 @@ import { useEffect } from "react";
         return data as TripMessageWithSender;
       },
       onSuccess: (data, variables) => {
+        // PostgREST self-referencing FK joins can return null on a fresh INSERT+SELECT.
+        // If reply_to is missing but we have the source message, inject it directly.
+        const reply = data.reply_to;
+        const replyMissing = !reply || (Array.isArray(reply) && reply.length === 0);
+        const enriched: TripMessageWithSender =
+          replyMissing && variables.replyToId && variables.replyToMessage
+            ? {
+                ...data,
+                reply_to: {
+                  id: variables.replyToMessage.id,
+                  content: variables.replyToMessage.content,
+                  sender_id: variables.replyToMessage.sender_id,
+                  sender: variables.replyToMessage.sender
+                    ? { name: (variables.replyToMessage.sender as any).name ?? null }
+                    : null,
+                },
+              }
+            : data;
+
         queryClient.setQueryData<InfiniteData<TripMessageWithSender[]>>(
           tripChatKeys.messages(variables.chatId),
           (old) => {
             if (!old) return old;
             const firstPage = old.pages[0] ?? [];
-            if (firstPage.some((m) => m.id === data.id)) return old;
-            // Append new message to the most-recent page
+            if (firstPage.some((m) => m.id === enriched.id)) return old;
             return {
               ...old,
-              pages: [[...firstPage, data], ...old.pages.slice(1)],
+              pages: [[...firstPage, enriched], ...old.pages.slice(1)],
             };
           }
         );
@@ -198,10 +216,15 @@ import { useEffect } from "react";
         messageId: string;
         content: string;
       }) => {
+        const { data: { session } } = await supabase.auth.getSession();
+        const user = session?.user;
+        if (!user) throw new Error("Not authenticated");
+
         const { data, error } = await supabase
           .from("trip_messages")
-          .update({ content, edited_at: new Date().toISOString() })
+          .update({ content })
           .eq("id", messageId)
+          .eq("sender_id", user.id)
           .select(MESSAGE_SELECT)
           .single();
 
@@ -266,20 +289,36 @@ import { useEffect } from "react";
               .eq("id", payload.new.id)
               .single();
 
-            if (message) {
-              queryClient.setQueryData<InfiniteData<TripMessageWithSender[]>>(
-                tripChatKeys.messages(chatId),
-                (old) => {
-                  if (!old) return old;
-                  const firstPage = old.pages[0] ?? [];
-                  if (firstPage.some((m) => m.id === (message as TripMessageWithSender).id)) return old;
-                  return {
-                    ...old,
-                    pages: [[...firstPage, message as TripMessageWithSender], ...old.pages.slice(1)],
-                  };
-                }
-              );
+            if (!message) return;
+
+            // Self-referencing FK joins can return null on realtime payloads.
+            // If reply_to_id is set but reply_to is missing, fetch it separately.
+            let enriched = message as TripMessageWithSender;
+            const replyId = payload.new.reply_to_id;
+            const replyMissing = replyId && (!enriched.reply_to || (Array.isArray(enriched.reply_to) && enriched.reply_to.length === 0));
+            if (replyMissing) {
+              const { data: replyMsg } = await supabase
+                .from("trip_messages")
+                .select("id, content, sender_id, sender:users(name)")
+                .eq("id", replyId)
+                .single();
+              if (replyMsg) {
+                enriched = { ...enriched, reply_to: replyMsg as any };
+              }
             }
+
+            queryClient.setQueryData<InfiniteData<TripMessageWithSender[]>>(
+              tripChatKeys.messages(chatId),
+              (old) => {
+                if (!old) return old;
+                const firstPage = old.pages[0] ?? [];
+                if (firstPage.some((m) => m.id === enriched.id)) return old;
+                return {
+                  ...old,
+                  pages: [[...firstPage, enriched], ...old.pages.slice(1)],
+                };
+              }
+            );
           }
         )
         .subscribe();
@@ -288,88 +327,6 @@ import { useEffect } from "react";
         supabase.removeChannel(channel);
       };
     }, [chatId, queryClient]);
-  }
-
-  // Upload an image and send as a message
-  export function useSendImageMessage() {
-    const queryClient = useQueryClient();
-
-    return useMutation({
-      mutationFn: async ({
-        chatId,
-        uri,
-        replyToId,
-      }: {
-        chatId: string;
-        uri: string;
-        replyToId?: string | null;
-      }) => {
-        const { data: { session } } = await supabase.auth.getSession();
-        const user = session?.user;
-        if (!user) throw new Error("Not authenticated");
-
-        const ext = (uri.split('.').pop()?.split('?')[0] ?? 'jpg').toLowerCase();
-        const contentType = ext === 'png' ? 'image/png'
-          : ext === 'gif' ? 'image/gif'
-          : ext === 'webp' ? 'image/webp'
-          : 'image/jpeg';
-        const path = `${chatId}/${user.id}_${Date.now()}.${ext}`;
-
-        // Read file as base64 then upload as Uint8Array (same approach used for profile photos)
-        console.log('[ImageUpload] Starting upload, uri:', uri);
-        const base64 = await FileSystem.readAsStringAsync(uri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-        console.log('[ImageUpload] base64 length:', base64.length);
-
-        const binary = atob(base64);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) {
-          bytes[i] = binary.charCodeAt(i);
-        }
-        console.log('[ImageUpload] bytes length:', bytes.length, 'uploading to path:', path);
-
-        const { error: uploadError } = await supabase.storage
-          .from('chat-images')
-          .upload(path, bytes, { contentType, upsert: false });
-
-        if (uploadError) {
-          console.error('[ImageUpload] Supabase upload error:', uploadError);
-          throw uploadError;
-        }
-        console.log('[ImageUpload] Upload success');
-
-        const { data: { publicUrl } } = supabase.storage
-          .from('chat-images')
-          .getPublicUrl(path);
-
-        const { data, error } = await supabase
-          .from('trip_messages')
-          .insert({
-            trip_chat_id: chatId,
-            sender_id: user.id,
-            content: publicUrl,
-            type: 'image',
-            ...(replyToId ? { reply_to_id: replyToId } : {}),
-          })
-          .select(MESSAGE_SELECT)
-          .single();
-
-        if (error) throw error;
-        return data as TripMessageWithSender;
-      },
-      onSuccess: (data, variables) => {
-        queryClient.setQueryData<InfiniteData<TripMessageWithSender[]>>(
-          tripChatKeys.messages(variables.chatId),
-          (old) => {
-            if (!old) return old;
-            const firstPage = old.pages[0] ?? [];
-            if (firstPage.some((m) => m.id === data.id)) return old;
-            return { ...old, pages: [[...firstPage, data], ...old.pages.slice(1)] };
-          }
-        );
-      },
-    });
   }
 
   // Toggle a reaction — add if not present, remove if same emoji already set

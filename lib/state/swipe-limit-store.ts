@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-const DAILY_SWIPE_LIMIT = 3;
+const DAILY_SWIPE_LIMIT = 10;
 const RESET_PERIOD_MS = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
 
 interface SwipeLimitState {

@@ -11,6 +11,7 @@
   import AsyncStorage from '@react-native-async-storage/async-storage';
   import { isAuthenticated, supabase } from '@/lib/supabase';
   import { preloadOnboardingImages } from '@/lib/hooks/useOnboardingImageCache';
+  import { prefetchAllCategories } from '@/lib/hooks/useTripImage';
 
 
   import { CustomSplashScreen } from '@/components/CustomSplashScreen';
@@ -160,6 +161,7 @@
           preloadOnboardingImages().catch((error) => {
             console.warn('Error preloading onboarding images:', error);
           });
+          prefetchAllCategories();
         } catch (error) {
           console.error('Error checking auth status:', error);
           setIsReady(true);

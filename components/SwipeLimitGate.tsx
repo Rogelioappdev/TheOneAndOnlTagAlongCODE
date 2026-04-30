@@ -1,15 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, Pressable } from 'react-native';
+import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Clock, Sparkles } from 'lucide-react-native';
 import Animated, {
   FadeIn,
   FadeInDown,
-  useAnimatedStyle,
-  useSharedValue,
-  withRepeat,
-  withTiming,
-  Easing,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import useSwipeLimitStore from '@/lib/state/swipe-limit-store';
@@ -21,59 +16,34 @@ interface SwipeLimitGateProps {
 
 function formatTimeRemaining(ms: number): string {
   if (ms <= 0) return '00:00:00';
-
   const totalSeconds = Math.floor(ms / 1000);
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
-
   return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 }
 
 export default function SwipeLimitGate({ onUnlockPress, onTimerComplete }: SwipeLimitGateProps) {
   const resetTimestamp = useSwipeLimitStore(s => s.getResetTimestamp());
   const resetSwipesIfNeeded = useSwipeLimitStore(s => s.resetSwipesIfNeeded);
-
   const [timeRemaining, setTimeRemaining] = useState<number>(0);
 
-  // Pulse animation for the timer
-  const pulseScale = useSharedValue(1);
-
-  useEffect(() => {
-    pulseScale.value = withRepeat(
-      withTiming(1.05, { duration: 1500, easing: Easing.inOut(Easing.ease) }),
-      -1,
-      true
-    );
-  }, [pulseScale]);
-
-  const pulseStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: pulseScale.value }],
-  }));
-
-  // Calculate and update time remaining
   useEffect(() => {
     if (!resetTimestamp) return;
 
     const updateTimer = () => {
       const now = Date.now();
       const remaining = resetTimestamp - now;
-
       if (remaining <= 0) {
         resetSwipesIfNeeded();
         onTimerComplete();
         return;
       }
-
       setTimeRemaining(remaining);
     };
 
-    // Update immediately
     updateTimer();
-
-    // Update every second
     const interval = setInterval(updateTimer, 1000);
-
     return () => clearInterval(interval);
   }, [resetTimestamp, resetSwipesIfNeeded, onTimerComplete]);
 
@@ -83,85 +53,137 @@ export default function SwipeLimitGate({ onUnlockPress, onTimerComplete }: Swipe
   }, [onUnlockPress]);
 
   return (
-    <View className="flex-1 bg-black">
-      <LinearGradient
-        colors={['#0a0a0a', '#111111', '#0a0a0a']}
-        style={{ flex: 1 }}
-      >
-        <View className="flex-1 justify-center items-center px-8">
-          {/* Icon with glow effect */}
-          <Animated.View
-            entering={FadeIn.delay(100).duration(600)}
-            style={pulseStyle}
-            className="mb-8"
-          >
-            <View className="w-24 h-24 rounded-full bg-zinc-900 items-center justify-center border border-zinc-800">
-              <Clock size={44} color="#6b7280" strokeWidth={1.5} />
-            </View>
-          </Animated.View>
+    <View style={styles.root}>
+      <View style={styles.inner}>
 
-          {/* Headline */}
-          <Animated.Text
-            entering={FadeInDown.delay(200).duration(500)}
-            className="text-white text-2xl font-semibold text-center mb-4"
-            style={{ letterSpacing: -0.5 }}
-          >
-            You've reached your daily swipe limit
-          </Animated.Text>
+        <Animated.View entering={FadeIn.delay(100).duration(600)} style={styles.iconWrap}>
+          <Clock size={44} color="#F0EBE3" strokeWidth={1.5} />
+        </Animated.View>
 
-          {/* Timer display */}
-          <Animated.View
-            entering={FadeInDown.delay(300).duration(500)}
-            className="bg-zinc-900/60 rounded-2xl px-8 py-5 mb-6 border border-zinc-800/50"
-          >
-            <Text className="text-zinc-500 text-sm text-center mb-2 tracking-wide">
-              RESETS IN
-            </Text>
-            <Text className="text-white text-4xl font-light text-center tracking-widest">
-              {formatTimeRemaining(timeRemaining)}
-            </Text>
-          </Animated.View>
+        <Animated.Text entering={FadeInDown.delay(200).duration(500)} style={styles.headline}>
+          You've reached your{'\n'}daily swipe limit
+        </Animated.Text>
 
-          {/* Subtext */}
-          <Animated.Text
-            entering={FadeInDown.delay(400).duration(500)}
-            className="text-zinc-500 text-base text-center mb-10 leading-6"
-          >
-            Free users get 3 swipes every 24 hours.{'\n'}
-            Come back when the timer hits zero.
-          </Animated.Text>
+        <Animated.View entering={FadeInDown.delay(300).duration(500)} style={styles.timerBox}>
+          <Text style={styles.timerLabel}>RESETS IN</Text>
+          <Text style={styles.timerText}>{formatTimeRemaining(timeRemaining)}</Text>
+        </Animated.View>
 
-          {/* Unlock button */}
-          <Animated.View entering={FadeInDown.delay(500).duration(500)} className="w-full">
-            <Pressable
-              onPress={handleUnlockPress}
-              className="active:opacity-90 active:scale-[0.98]"
+        <Animated.Text entering={FadeInDown.delay(400).duration(500)} style={styles.subtext}>
+          Free users get 10 swipes every 24 hours.{'\n'}
+          Come back when the timer hits zero.
+        </Animated.Text>
+
+        <Animated.View entering={FadeInDown.delay(500).duration(500)} style={styles.btnWrap}>
+          <Pressable
+            onPress={handleUnlockPress}
+            style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
+          >
+            <LinearGradient
+              colors={['#F0EBE3', '#d8d1c8']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.btn}
             >
-              <LinearGradient
-                colors={['#10b981', '#059669']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={{ borderRadius: 16 }}
-              >
-                <View className="flex-row items-center justify-center py-4 px-6">
-                  <Sparkles size={20} color="#ffffff" className="mr-2" />
-                  <Text className="text-white text-lg font-semibold ml-2">
-                    Unlock unlimited swipes
-                  </Text>
-                </View>
-              </LinearGradient>
-            </Pressable>
-          </Animated.View>
+              <Sparkles size={20} color="#000" strokeWidth={2} />
+              <Text style={styles.btnText}>Unlock unlimited swipes</Text>
+            </LinearGradient>
+          </Pressable>
+        </Animated.View>
 
-          {/* Premium teaser */}
-          <Animated.Text
-            entering={FadeInDown.delay(600).duration(500)}
-            className="text-zinc-600 text-sm text-center mt-6"
-          >
-            Tag-Along+ members swipe without limits
-          </Animated.Text>
-        </View>
-      </LinearGradient>
+        <Animated.Text entering={FadeInDown.delay(600).duration(500)} style={styles.teaser}>
+          TagAlong+ members swipe without limits
+        </Animated.Text>
+
+      </View>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: '#000000',
+  },
+  inner: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+  },
+  iconWrap: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: 'rgba(240,235,227,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(240,235,227,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 32,
+  },
+  headline: {
+    color: '#ffffff',
+    fontSize: 24,
+    fontFamily: 'Outfit-Bold',
+    textAlign: 'center',
+    letterSpacing: -0.5,
+    marginBottom: 24,
+    lineHeight: 32,
+  },
+  timerBox: {
+    backgroundColor: 'rgba(240,235,227,0.06)',
+    borderRadius: 20,
+    paddingHorizontal: 32,
+    paddingVertical: 20,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(240,235,227,0.1)',
+    alignItems: 'center',
+  },
+  timerLabel: {
+    color: 'rgba(240,235,227,0.4)',
+    fontSize: 11,
+    fontFamily: 'Outfit-SemiBold',
+    letterSpacing: 2,
+    marginBottom: 8,
+  },
+  timerText: {
+    color: '#F0EBE3',
+    fontSize: 40,
+    fontFamily: 'Outfit-Bold',
+    letterSpacing: 2,
+  },
+  subtext: {
+    color: 'rgba(255,255,255,0.35)',
+    fontSize: 15,
+    fontFamily: 'Outfit-Regular',
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: 40,
+  },
+  btnWrap: {
+    width: '100%',
+  },
+  btn: {
+    borderRadius: 18,
+    paddingVertical: 17,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  btnText: {
+    color: '#000000',
+    fontSize: 17,
+    fontFamily: 'Outfit-Bold',
+    letterSpacing: 0.2,
+  },
+  teaser: {
+    color: 'rgba(255,255,255,0.25)',
+    fontSize: 13,
+    fontFamily: 'Outfit-Regular',
+    textAlign: 'center',
+    marginTop: 20,
+  },
+});

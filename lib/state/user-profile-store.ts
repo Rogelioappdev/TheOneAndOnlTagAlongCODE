@@ -30,6 +30,7 @@ export interface UserProfile {
   zodiac:      string | null;
   mbti:        string | null;
   travelQuote: string | null;
+  instagram:   string | null;
 
   // Meta
   verified: boolean;
@@ -40,11 +41,13 @@ export interface UserProfile {
 interface UserProfileStore {
   profile: UserProfile | null;
   isLoaded: boolean;
+  profileSetupCompleted: boolean;
 
   // Actions
   setProfile: (profile: UserProfile) => void;
   updateProfile: (updates: Partial<UserProfile>) => void;
   clearProfile: () => void;
+  setProfileSetupCompleted: (v: boolean) => void;
 
   // Travel Style Actions
   addTravelStyle: (style: string) => void;
@@ -76,9 +79,14 @@ const useUserProfileStore = create<UserProfileStore>()(
     (set, get) => ({
       profile: null,
       isLoaded: false,
+      profileSetupCompleted: false,
 
       setProfile: (profile) => {
         set({ profile, isLoaded: true });
+      },
+
+      setProfileSetupCompleted: (v) => {
+        set({ profileSetupCompleted: v });
       },
 
       updateProfile: (updates) => {
